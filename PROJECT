@@ -3,7 +3,7 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.6.0
-domain: my.domain
+domain: zitadel.iam.miloapis.com
 layout:
 - go.kubebuilder.io/v4
 projectName: auth-provider-zitadel
