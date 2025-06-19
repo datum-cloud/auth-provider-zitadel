@@ -60,11 +60,61 @@ spec:
       containers:
       - args:
           - controller
-          - --leader-elect
-          - --health-probe-bind-address=:8081
+          # Leader election configuration
+          - --leader-elect=$(LEADER_ELECT)
+          - --leader-election-id=$(LEADER_ELECTION_ID)
+          - --leader-election-namespace=$(LEADER_ELECTION_NAMESPACE)
+          - --leader-election-resource-lock=$(LEADER_ELECTION_RESOURCE_LOCK)
+          - --leader-election-lease-duration=$(LEADER_ELECTION_LEASE_DURATION)
+          - --leader-election-renew-deadline=$(LEADER_ELECTION_RENEW_DEADLINE)
+          - --leader-election-retry-period=$(LEADER_ELECTION_RETRY_PERIOD)
+          - --leader-election-release-on-cancel=$(LEADER_ELECTION_RELEASE_ON_CANCEL)
+          # Health and metrics configuration
+          - --health-probe-bind-address=$(HEALTH_PROBE_BIND_ADDRESS)
+          - --metrics-bind-address=$(METRICS_BIND_ADDRESS)
+          - --metrics-secure=$(METRICS_SECURE)
+          # Global configuration
+          - --log-level=$(LOG_LEVEL)
+          - --log-format=$(LOG_FORMAT)
         image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
         name: controller-manager
-        ports: []
+        env:
+        # Leader election environment variables
+        - name: LEADER_ELECT
+          value: "true"
+        - name: LEADER_ELECTION_ID
+          value: "auth-provider-zitadel-leader"
+        - name: LEADER_ELECTION_NAMESPACE
+          value: ""  # Uses current namespace
+        - name: LEADER_ELECTION_RESOURCE_LOCK
+          value: "leases"
+        - name: LEADER_ELECTION_LEASE_DURATION
+          value: "15s"
+        - name: LEADER_ELECTION_RENEW_DEADLINE
+          value: "10s"
+        - name: LEADER_ELECTION_RETRY_PERIOD
+          value: "2s"
+        - name: LEADER_ELECTION_RELEASE_ON_CANCEL
+          value: "true"
+        # Health and metrics environment variables
+        - name: HEALTH_PROBE_BIND_ADDRESS
+          value: ":8081"
+        - name: METRICS_BIND_ADDRESS
+          value: ":8443"
+        - name: METRICS_SECURE
+          value: "true"
+        # Global configuration environment variables
+        - name: LOG_LEVEL
+          value: "info"
+        - name: LOG_FORMAT
+          value: "json"
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        - containerPort: 8443
+          name: metrics
+          protocol: TCP
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

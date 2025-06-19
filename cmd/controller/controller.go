@@ -47,12 +47,28 @@ and manages the auth provider lifecycle.`,
 		"The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	cmd.Flags().StringVar(&cfg.ProbeAddr, "health-probe-bind-address", cfg.ProbeAddr,
 		"The address the probe endpoint binds to.")
-	cmd.Flags().BoolVar(&cfg.EnableLeaderElection, "leader-elect", cfg.EnableLeaderElection,
-		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().BoolVar(&cfg.SecureMetrics, "metrics-secure", cfg.SecureMetrics,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	cmd.Flags().BoolVar(&cfg.EnableHTTP2, "enable-http2", cfg.EnableHTTP2,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+
+	// Leader election flags
+	cmd.Flags().BoolVar(&cfg.LeaderElection.Enabled, "leader-elect", cfg.LeaderElection.Enabled,
+		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	cmd.Flags().StringVar(&cfg.LeaderElection.ID, "leader-election-id", cfg.LeaderElection.ID,
+		"The name of the resource object that is used for locking during leader election.")
+	cmd.Flags().StringVar(&cfg.LeaderElection.Namespace, "leader-election-namespace", cfg.LeaderElection.Namespace,
+		"The namespace in which the leader election resource will be created. If empty, uses the current namespace.")
+	cmd.Flags().StringVar(&cfg.LeaderElection.ResourceLock, "leader-election-resource-lock", cfg.LeaderElection.ResourceLock,
+		"The type of resource object that is used for locking during leader election. Supported options are 'leases', 'endpointsleases' and 'configmapsleases'.")
+	cmd.Flags().DurationVar(&cfg.LeaderElection.LeaseDuration, "leader-election-lease-duration", cfg.LeaderElection.LeaseDuration,
+		"The duration that non-leader candidates will wait after observing a leadership renewal until attempting to acquire leadership of a led but unrenewed leader slot.")
+	cmd.Flags().DurationVar(&cfg.LeaderElection.RenewDeadline, "leader-election-renew-deadline", cfg.LeaderElection.RenewDeadline,
+		"The interval between attempts by the acting master to renew a leadership slot before it stops leading.")
+	cmd.Flags().DurationVar(&cfg.LeaderElection.RetryPeriod, "leader-election-retry-period", cfg.LeaderElection.RetryPeriod,
+		"The duration the clients should wait between attempting acquisition and renewal of a leadership.")
+	cmd.Flags().BoolVar(&cfg.LeaderElection.ReleaseOnCancel, "leader-election-release-on-cancel", cfg.LeaderElection.ReleaseOnCancel,
+		"If the leader should step down voluntarily when the Manager ends. This requires the binary to immediately end when the Manager is stopped.")
 
 	// Certificate flags
 	cmd.Flags().StringVar(&cfg.Webhook.CertPath, "webhook-cert-path", cfg.Webhook.CertPath,
@@ -74,6 +90,21 @@ and manages the auth provider lifecycle.`,
 func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConfig) error {
 	setupLog := ctrl.Log.WithName("setup")
 	setupLog.Info("Starting controller manager")
+
+	// Log leader election configuration
+	if cfg.LeaderElection.Enabled {
+		setupLog.Info("Leader election enabled",
+			"id", cfg.LeaderElection.ID,
+			"namespace", cfg.LeaderElection.Namespace,
+			"resource-lock", cfg.LeaderElection.ResourceLock,
+			"lease-duration", cfg.LeaderElection.LeaseDuration,
+			"renew-deadline", cfg.LeaderElection.RenewDeadline,
+			"retry-period", cfg.LeaderElection.RetryPeriod,
+			"release-on-cancel", cfg.LeaderElection.ReleaseOnCancel,
+		)
+	} else {
+		setupLog.Info("Leader election disabled")
+	}
 
 	// Get TLS options
 	tlsOpts := cfg.GetTLSOptions()
@@ -155,25 +186,37 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsServerOptions,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: cfg.ProbeAddr,
-		LeaderElection:         cfg.EnableLeaderElection,
-		LeaderElectionID:       cfg.LeaderElectionID,
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
-	})
+	// Create manager options with leader election configuration
+	mgrOptions := ctrl.Options{
+		Scheme:                        scheme,
+		Metrics:                       metricsServerOptions,
+		WebhookServer:                 webhookServer,
+		HealthProbeBindAddress:        cfg.ProbeAddr,
+		LeaderElection:                cfg.LeaderElection.Enabled,
+		LeaderElectionID:              cfg.LeaderElection.ID,
+		LeaderElectionReleaseOnCancel: cfg.LeaderElection.ReleaseOnCancel,
+	}
+
+	// Add optional leader election configuration
+	if cfg.LeaderElection.Enabled {
+		if cfg.LeaderElection.Namespace != "" {
+			mgrOptions.LeaderElectionNamespace = cfg.LeaderElection.Namespace
+		}
+		if cfg.LeaderElection.ResourceLock != "" {
+			mgrOptions.LeaderElectionResourceLock = cfg.LeaderElection.ResourceLock
+		}
+		if cfg.LeaderElection.LeaseDuration > 0 {
+			mgrOptions.LeaseDuration = &cfg.LeaderElection.LeaseDuration
+		}
+		if cfg.LeaderElection.RenewDeadline > 0 {
+			mgrOptions.RenewDeadline = &cfg.LeaderElection.RenewDeadline
+		}
+		if cfg.LeaderElection.RetryPeriod > 0 {
+			mgrOptions.RetryPeriod = &cfg.LeaderElection.RetryPeriod
+		}
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOptions)
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
