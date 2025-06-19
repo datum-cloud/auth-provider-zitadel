@@ -32,13 +32,13 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     -X 'go.miloapis.com/auth-provider-zitadel/pkg/version.Version=${VERSION}' \
     -X 'go.miloapis.com/auth-provider-zitadel/pkg/version.GitCommit=${GIT_COMMIT}' \
     -X 'go.miloapis.com/auth-provider-zitadel/pkg/version.BuildDate=${BUILD_DATE}'" \
-    -o manager cmd/main.go
+    -o auth-provider-zitadel cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/auth-provider-zitadel .
 USER 65532:65532
 
-ENTRYPOINT ["/manager"]
+ENTRYPOINT ["/auth-provider-zitadel"]
