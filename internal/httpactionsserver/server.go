@@ -161,7 +161,7 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 			APIVersion: "iam.miloapis.com/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: req.UserID,
+			Name: req.AggregateID,
 		},
 		Spec: iammiloapiscomv1alpha1.UserSpec{
 			Email:      req.EventPayload.Email,
