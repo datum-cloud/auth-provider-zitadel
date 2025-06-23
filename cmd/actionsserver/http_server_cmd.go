@@ -4,9 +4,10 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/zitadel/zitadel/pkg/actions"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
 	"go.miloapis.com/auth-provider-zitadel/internal/httpactionsserver"
-	actions "go.miloapis.com/auth-provider-zitadel/pkg/zitadel-actions/signature"
+	signature "go.miloapis.com/auth-provider-zitadel/pkg/zitadel-actions/signature"
 	iamiamv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -63,7 +64,7 @@ If a TLS certificate and key are provided, the server will start in HTTPS mode. 
 			var validateSignatureFunc httpactionsserver.ValidateSignatureFunc
 			if cfg.DisableSignatureValidation {
 				log.Info("Signature validation disabled, using noop validator")
-				validateSignatureFunc = actions.NoopValidatePayload
+				validateSignatureFunc = signature.NoopValidatePayload
 			} else {
 				if cfg.SigningKey == "" {
 					log.Error(nil, "Signing key is required when signature validation is enabled")

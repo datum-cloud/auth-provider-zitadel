@@ -6,6 +6,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	github.com/spf13/cobra v1.9.1
+	github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a
 	go.miloapis.com/milo v0.0.0-20250618192254-65cc43fc3e7f
 	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.33.2
@@ -97,5 +98,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.7.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace go.miloapis.com/milo => ../milo
