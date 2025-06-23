@@ -75,7 +75,8 @@ If a TLS certificate and key are provided, the server will start in HTTPS mode. 
 
 			// Start the server
 			log.Info("Starting HTTP actions server")
-			return httpactionsserver.RunServer(cfg, k8sClient, validateSignatureFunc)
+			svr := httpactionsserver.NewServer(cfg, k8sClient, validateSignatureFunc)
+			return svr.Start()
 		},
 	}
 

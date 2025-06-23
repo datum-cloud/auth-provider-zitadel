@@ -78,15 +78,6 @@ type createUserAccountRequest struct {
 	} `json:"event_payload"`
 }
 
-// RunServer starts the HTTP(S) server using the provided configuration.
-// This is a convenience function that creates a server with the given config and k8s client.
-func RunServer(cfg *ServerConfig, k8sClient client.Client, validateSignatureFunc ValidateSignatureFunc) error {
-	log := logf.Log.WithName("httpactionsserver")
-	log.Info("Starting server", "addr", cfg.Addr)
-	server := NewServer(cfg, k8sClient, validateSignatureFunc)
-	return server.Start()
-}
-
 // Start starts the HTTP(S) server
 func (s *Server) Start() error {
 	log := logf.Log.WithName("httpactionsserver")
