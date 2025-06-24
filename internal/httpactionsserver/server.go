@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/cri-api/pkg/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
@@ -190,11 +189,6 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write([]byte("created"))
 }
 
-type JwtClaim struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
-}
-
 type CustomizeJwtHandlerResponse struct {
 	SetUserMetadata []*Metadata    `json:"set_user_metadata,omitempty"`
 	AppendClaims    []*AppendClaim `json:"append_claims,omitempty"`
@@ -207,6 +201,12 @@ type CustomizeJwtHandlerRequest struct {
 		Sub string `json:"sub"`
 	} `json:"userinfo"`
 	Function string `json:"function"`
+	User     struct {
+		Username string `json:"username"`
+		Human    *struct {
+			Email string `json:"email"`
+		} `json:"human,omitempty"`
+	} `json:"user"`
 }
 
 type Metadata struct {
@@ -254,28 +254,22 @@ func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.V(1).Info("Validated function type", "function", request.Function)
 
-	// Get the user resource from the Kubernetes API.
-	// Milo is always the source of truth for the user information.
-	iamUser := &iammiloapiscomv1alpha1.User{}
-	log.V(1).Info("Fetching user resource from Kubernetes API", "username", request.UserInfo.Sub)
-	if err := s.k8sClient.Get(r.Context(), client.ObjectKey{Name: request.UserInfo.Sub}, iamUser); err != nil {
-		if errors.IsNotFound(err) {
-			log.Error(err, "User resource not found in Milo", "username", request.UserInfo.Sub)
-			http.Error(w, fmt.Sprintf("user resource not found in Milo: %v", err), http.StatusNotFound)
-			return
-		}
-		log.Error(err, "Failed to get user resource", "zitadelUserId", request.UserInfo.Sub)
-		http.Error(w, fmt.Sprintf("failed to get user resource: %v", err), http.StatusInternalServerError)
-		return
+	// Determine email based on user type
+	var email string
+	if request.User.Human != nil {
+		email = request.User.Human.Email
+		log.V(1).Info("Processing human user", "email", email)
+	} else {
+		email = request.User.Username
+		log.V(1).Info("Processing machine user", "email", email)
 	}
-	log.V(1).Info("Successfully retrieved user resource", "userSub", request.UserInfo.Sub, "email", iamUser.Spec.Email)
 
 	resp := &CustomizeJwtHandlerResponse{
 		SetUserMetadata: []*Metadata{
 			{Key: "key", Value: []byte("value")},
 		},
 		AppendClaims: []*AppendClaim{
-			{Key: "email", Value: iamUser.Spec.Email},
+			{Key: "email", Value: email},
 		},
 	}
 
@@ -285,6 +279,6 @@ func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	log.Info("Successfully processed customize-jwt request", "userSub", request.UserInfo.Sub, "email", iamUser.Spec.Email)
+	log.Info("Successfully processed customize-jwt request", "userSub", request.UserInfo.Sub, "email", email)
 	w.Write(data)
 }
