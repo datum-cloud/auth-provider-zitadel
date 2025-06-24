@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/cri-api/pkg/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
@@ -83,6 +84,7 @@ func (s *Server) Start() error {
 	log := logf.Log.WithName("httpactionsserver")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/actions/create-user-account", s.createUserAccountHandler)
+	mux.HandleFunc("/v1/actions/customize-jwt", s.customizeJwtHandler)
 
 	srv := &http.Server{
 		Addr:    s.config.Addr,
@@ -186,4 +188,103 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte("created"))
+}
+
+type JwtClaim struct {
+	Key   string `json:"key"`
+	Value any    `json:"value"`
+}
+
+type CustomizeJwtHandlerResponse struct {
+	SetUserMetadata []*Metadata    `json:"set_user_metadata,omitempty"`
+	AppendClaims    []*AppendClaim `json:"append_claims,omitempty"`
+}
+
+// CustomizeJWTRequest is the PARTIAL request body for the customize-jwt endpoint.
+// It is used to extract the necessary information from the request body.
+type CustomizeJwtHandlerRequest struct {
+	UserInfo struct {
+		Sub string `json:"sub"`
+	} `json:"userinfo"`
+	Function string `json:"function"`
+}
+
+type Metadata struct {
+	Key   string `json:"key"`
+	Value []byte `json:"value"`
+}
+
+type AppendClaim struct {
+	Key   string `json:"key"`
+	Value any    `json:"value"`
+}
+
+// customizeJwtHandler is a custom JWT handler that adds a custom email address claim to the JWT.
+func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
+	log := logf.FromContext(r.Context()).WithName("customizeJwtHandler")
+	log.Info("Handling customize-jwt request", "method", r.Method, "remoteAddr", r.RemoteAddr)
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Error(err, "Failed to read request body")
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	log.V(1).Info("Successfully read request body")
+
+	if err := s.validateSignature(bodyBytes, r.Header.Get("Zitadel-Signature"), s.config.SigningKey); err != nil {
+		log.Error(err, "Signature validation failed")
+		http.Error(w, fmt.Sprintf("signature validation failed: %v", err), http.StatusUnauthorized)
+		return
+	}
+	log.V(1).Info("Request signature validated successfully")
+
+	var request CustomizeJwtHandlerRequest
+	if err := json.Unmarshal(bodyBytes, &request); err != nil {
+		log.Error(err, "Failed to unmarshal request body")
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	log.V(1).Info("Successfully unmarshaled request body", "function", request.Function, "userSub", request.UserInfo.Sub)
+
+	if request.Function != "function/preuserinfo" {
+		log.Error(nil, "Unsupported function", "function", request.Function)
+		http.Error(w, fmt.Sprintf("unsupported function: %s", request.Function), http.StatusBadRequest)
+		return
+	}
+	log.V(1).Info("Validated function type", "function", request.Function)
+
+	// Get the user resource from the Kubernetes API.
+	// Milo is always the source of truth for the user information.
+	iamUser := &iammiloapiscomv1alpha1.User{}
+	log.V(1).Info("Fetching user resource from Kubernetes API", "username", request.UserInfo.Sub)
+	if err := s.k8sClient.Get(r.Context(), client.ObjectKey{Name: request.UserInfo.Sub}, iamUser); err != nil {
+		if errors.IsNotFound(err) {
+			log.Error(err, "User resource not found in Milo", "username", request.UserInfo.Sub)
+			http.Error(w, fmt.Sprintf("user resource not found in Milo: %v", err), http.StatusNotFound)
+			return
+		}
+		log.Error(err, "Failed to get user resource", "zitadelUserId", request.UserInfo.Sub)
+		http.Error(w, fmt.Sprintf("failed to get user resource: %v", err), http.StatusInternalServerError)
+		return
+	}
+	log.V(1).Info("Successfully retrieved user resource", "userSub", request.UserInfo.Sub, "email", iamUser.Spec.Email)
+
+	resp := &CustomizeJwtHandlerResponse{
+		SetUserMetadata: []*Metadata{
+			{Key: "key", Value: []byte("value")},
+		},
+		AppendClaims: []*AppendClaim{
+			{Key: "email", Value: iamUser.Spec.Email},
+		},
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		log.Error(err, "Failed to marshal response")
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	log.Info("Successfully processed customize-jwt request", "userSub", request.UserInfo.Sub, "email", iamUser.Spec.Email)
+	w.Write(data)
 }
