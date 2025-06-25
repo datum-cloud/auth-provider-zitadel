@@ -280,5 +280,12 @@ func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Info("Successfully processed customize-jwt request", "userSub", request.UserInfo.Sub, "email", email)
-	w.Write(data)
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Error(err, "Failed to write response")
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	log.Info("Successfully wrote response")
 }
