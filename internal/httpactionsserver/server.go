@@ -83,6 +83,7 @@ func (s *Server) Start() error {
 	log := logf.Log.WithName("httpactionsserver")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/actions/create-user-account", s.createUserAccountHandler)
+	mux.HandleFunc("/v1/actions/customize-jwt", s.customizeJwtHandler)
 
 	srv := &http.Server{
 		Addr:    s.config.Addr,
@@ -186,4 +187,105 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte("created"))
+}
+
+type CustomizeJwtHandlerResponse struct {
+	SetUserMetadata []*Metadata    `json:"set_user_metadata,omitempty"`
+	AppendClaims    []*AppendClaim `json:"append_claims,omitempty"`
+}
+
+// CustomizeJWTRequest is the PARTIAL request body for the customize-jwt endpoint.
+// It is used to extract the necessary information from the request body.
+type CustomizeJwtHandlerRequest struct {
+	UserInfo struct {
+		Sub string `json:"sub"`
+	} `json:"userinfo"`
+	Function string `json:"function"`
+	User     struct {
+		Username string `json:"username"`
+		Human    *struct {
+			Email string `json:"email"`
+		} `json:"human,omitempty"`
+	} `json:"user"`
+}
+
+type Metadata struct {
+	Key   string `json:"key"`
+	Value []byte `json:"value"`
+}
+
+type AppendClaim struct {
+	Key   string `json:"key"`
+	Value any    `json:"value"`
+}
+
+// customizeJwtHandler is a custom JWT handler that adds a custom email address claim to the JWT.
+func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
+	log := logf.FromContext(r.Context()).WithName("customizeJwtHandler")
+	log.Info("Handling customize-jwt request", "method", r.Method, "remoteAddr", r.RemoteAddr)
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Error(err, "Failed to read request body")
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	log.V(1).Info("Successfully read request body")
+
+	if err := s.validateSignature(bodyBytes, r.Header.Get("Zitadel-Signature"), s.config.SigningKey); err != nil {
+		log.Error(err, "Signature validation failed")
+		http.Error(w, fmt.Sprintf("signature validation failed: %v", err), http.StatusUnauthorized)
+		return
+	}
+	log.V(1).Info("Request signature validated successfully")
+
+	var request CustomizeJwtHandlerRequest
+	if err := json.Unmarshal(bodyBytes, &request); err != nil {
+		log.Error(err, "Failed to unmarshal request body")
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	log.V(1).Info("Successfully unmarshaled request body", "function", request.Function, "userSub", request.UserInfo.Sub)
+
+	if request.Function != "function/preuserinfo" && request.Function != "function/preaccesstoken" {
+		log.Error(nil, "Unsupported function", "function", request.Function)
+		http.Error(w, fmt.Sprintf("unsupported function: %s", request.Function), http.StatusBadRequest)
+		return
+	}
+	log.V(1).Info("Validated function type", "function", request.Function)
+
+	// Determine email based on user type
+	var email string
+	if request.User.Human != nil {
+		email = request.User.Human.Email
+		log.V(1).Info("Processing human user", "email", email)
+	} else {
+		email = request.User.Username
+		log.V(1).Info("Processing machine user", "email", email)
+	}
+
+	resp := &CustomizeJwtHandlerResponse{
+		SetUserMetadata: []*Metadata{
+			{Key: "key", Value: []byte("value")},
+		},
+		AppendClaims: []*AppendClaim{
+			{Key: "email", Value: email},
+		},
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		log.Error(err, "Failed to marshal response")
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	log.Info("Successfully processed customize-jwt request", "userSub", request.UserInfo.Sub, "email", email)
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Error(err, "Failed to write response")
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	log.Info("Successfully wrote response")
 }
