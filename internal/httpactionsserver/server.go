@@ -247,7 +247,7 @@ func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.V(1).Info("Successfully unmarshaled request body", "function", request.Function, "userSub", request.UserInfo.Sub)
 
-	if request.Function != "function/preuserinfo" {
+	if request.Function != "function/preuserinfo" && request.Function != "function/preaccesstoken" {
 		log.Error(nil, "Unsupported function", "function", request.Function)
 		http.Error(w, fmt.Sprintf("unsupported function: %s", request.Function), http.StatusBadRequest)
 		return
