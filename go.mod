@@ -7,7 +7,8 @@ require (
 	github.com/onsi/gomega v1.37.0
 	github.com/spf13/cobra v1.9.1
 	github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a
-	go.miloapis.com/milo v0.0.0-20250618192254-65cc43fc3e7f
+	go.miloapis.com/milo v0.0.0-20250626123012-aeb9a202169f
+	go.uber.org/zap v1.27.0
 	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.33.2
 	sigs.k8s.io/controller-runtime v0.21.0
@@ -67,7 +68,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.7.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
