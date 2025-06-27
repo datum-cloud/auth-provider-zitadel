@@ -80,9 +80,29 @@ spec:
             status:
               state: Active
 
-      # --- Step 5 : Revert to original states ---------------------------------------
+      # --- Verify Zitadel state after first flip -----------------------------------
+      - script:
+          env:
+            - name: NAMESPACE
+              value: ($namespace)
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            echo "Using namespace: $NAMESPACE"
+            ACTIVE_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            INACTIVE_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            echo "Active UID: $ACTIVE_UID"
+            echo "Inactive UID: $INACTIVE_UID"
+            ACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${ACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            INACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${INACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            echo "Active MachineAccount (now Inactive): $ACTIVE_STATE"
+            echo "Inactive MachineAccount (now Active): $INACTIVE_STATE"
+            # Verify the states are flipped
+            [[ "$ACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Active account should be inactive in Zitadel"; exit 1; }
+            [[ "$INACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Inactive account should be active in Zitadel"; exit 1; }
+
+      # --- Step 5 : Revert to original states -----------------------------------
       - patch:
-          # Revert the active-machineaccount back to Active state.
           resource:
             apiVersion: iam.miloapis.com/v1alpha1
             kind: MachineAccount
@@ -91,7 +111,6 @@ spec:
             spec:
               state: Active
       - patch:
-          # Revert the inactive-machineaccount back to Inactive state.
           resource:
             apiVersion: iam.miloapis.com/v1alpha1
             kind: MachineAccount
@@ -99,6 +118,27 @@ spec:
               name: inactive-machineaccount
             spec:
               state: Inactive
+
+      # --- Verify Zitadel state after reversion ---------------------------------
+      - script:
+          env:
+            - name: NAMESPACE
+              value: ($namespace)
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            echo "Using namespace: $NAMESPACE"
+            ACTIVE_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            INACTIVE_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            echo "Active UID: $ACTIVE_UID"
+            echo "Inactive UID: $INACTIVE_UID"
+            ACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${ACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            INACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${INACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            echo "Active MachineAccount (back to Active): $ACTIVE_STATE"
+            echo "Inactive MachineAccount (back to Inactive): $INACTIVE_STATE"
+            # Verify the states are back to original
+            [[ "$ACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Active account should be active in Zitadel"; exit 1; }
+            [[ "$INACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Inactive account should be inactive in Zitadel"; exit 1; }
 
   - name: verify-original-state
     try:
