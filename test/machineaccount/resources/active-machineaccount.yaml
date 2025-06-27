@@ -1,0 +1,9 @@
+apiVersion: iam.miloapis.com/v1alpha1
+kind: MachineAccount
+metadata:
+  name: active-machineaccount
+  namespace: ($namespace)
+  annotations:
+    kubernetes.io/description: "Service account for e2e testing"
+spec:
+  state: Active
