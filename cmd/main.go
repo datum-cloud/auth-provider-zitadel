@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
 	"go.miloapis.com/auth-provider-zitadel/cmd/actionsserver"
 	"go.miloapis.com/auth-provider-zitadel/cmd/controller"
 	"go.miloapis.com/auth-provider-zitadel/cmd/version"

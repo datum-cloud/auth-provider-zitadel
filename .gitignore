@@ -25,3 +25,5 @@ go.work
 *.swp
 *.swo
 *~
+
+zitadel-admin-sa.json

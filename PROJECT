@@ -8,4 +8,11 @@ layout:
 - go.kubebuilder.io/v4
 projectName: auth-provider-zitadel
 repo: go.miloapis.com/auth-provider-zitadel
+resources:
+- controller: true
+  domain: iam.miloapis.com
+  external: true
+  kind: MachineAccount
+  path: go.miloapis.com/milo/pkg/apis/iam/v1alpha1
+  version: v1alpha1
 version: "3"

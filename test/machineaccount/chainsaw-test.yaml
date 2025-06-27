@@ -1,0 +1,148 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: machineaccount-state
+spec:
+  # This test exercises the MachineAccount controller end-to-end.
+  # 1. Apply two MachineAccount resources (Active & Inactive).
+  # 2. Verify the controller sets the corresponding Status.state values.
+  # 3. Flip their desired spec.state values and patch the resources.
+  # 4. Verify the controller reconciles the new desired states.
+  # 5. Revert back to original states.
+  # 6. Assert using original resources to verify we're back to initial state.
+  steps:
+  - name: create-and-verify
+    try:
+      # --- Step 1 : Create resources -------------------------------------------------
+      - apply:
+          # Apply both manifests located in the resources directory.
+          file: resources/*.yaml
+
+      # --- Step 2 : Verify initial state --------------------------------------------
+      - assert:
+          # Expect the "active" account to be in Active state.
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: active-machineaccount
+              namespace: ($namespace)
+            status:
+              state: Active
+      - assert:
+          # Expect the "inactive" account to be in Inactive state.
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: inactive-machineaccount
+              namespace: ($namespace)
+            status:
+              state: Inactive
+
+      # --- Step 3 : Flip desired states via patch -----------------------------------
+      - patch:
+          # Set the previously Active account to Inactive.
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: active-machineaccount
+            spec:
+              state: Inactive
+      - patch:
+          # Set the previously Inactive account to Active.
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: inactive-machineaccount
+            spec:
+              state: Active
+
+      # --- Step 4 : Verify reconciled state -----------------------------------------
+      - assert:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: active-machineaccount
+              namespace: ($namespace)
+            status:
+              state: Inactive
+      - assert:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: inactive-machineaccount
+              namespace: ($namespace)
+            status:
+              state: Active
+
+      # --- Verify Zitadel state after first flip -----------------------------------
+      - script:
+          env:
+            - name: NAMESPACE
+              value: ($namespace)
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            echo "Using namespace: $NAMESPACE"
+            ACTIVE_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            INACTIVE_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            echo "Active UID: $ACTIVE_UID"
+            echo "Inactive UID: $INACTIVE_UID"
+            ACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${ACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            INACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${INACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            echo "Active MachineAccount (now Inactive): $ACTIVE_STATE"
+            echo "Inactive MachineAccount (now Active): $INACTIVE_STATE"
+            # Verify the states are flipped
+            [[ "$ACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Active account should be inactive in Zitadel"; exit 1; }
+            [[ "$INACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Inactive account should be active in Zitadel"; exit 1; }
+
+      # --- Step 5 : Revert to original states -----------------------------------
+      - patch:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: active-machineaccount
+            spec:
+              state: Active
+      - patch:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: MachineAccount
+            metadata:
+              name: inactive-machineaccount
+            spec:
+              state: Inactive
+
+      # --- Verify Zitadel state after reversion ---------------------------------
+      - script:
+          env:
+            - name: NAMESPACE
+              value: ($namespace)
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            echo "Using namespace: $NAMESPACE"
+            ACTIVE_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            INACTIVE_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            echo "Active UID: $ACTIVE_UID"
+            echo "Inactive UID: $INACTIVE_UID"
+            ACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${ACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            INACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${INACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
+            echo "Active MachineAccount (back to Active): $ACTIVE_STATE"
+            echo "Inactive MachineAccount (back to Inactive): $INACTIVE_STATE"
+            # Verify the states are back to original
+            [[ "$ACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Active account should be active in Zitadel"; exit 1; }
+            [[ "$INACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Inactive account should be inactive in Zitadel"; exit 1; }
+
+  - name: verify-original-state
+    try:
+      # --- Step 6 : Verify we're back to initial state ------------------------------
+      - assert:
+          # Assert using the original resource files to ensure we're back to the initial state.
+          file: resources/*.yaml 
