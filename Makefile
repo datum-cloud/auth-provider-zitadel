@@ -72,22 +72,39 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # - CERT_MANAGER_INSTALL_SKIP=true
 KIND_CLUSTER ?= auth-provider-zitadel-test-e2e
 
-.PHONY: setup-test-e2e
-setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
+.PHONY: test-chainsaw
+test-chainsaw: chainsaw ## Run chainsaw tests directly without setup.
+	"$(CHAINSAW)" test test/
+
+.PHONY: test-e2e
+test-e2e: manifests generate fmt vet docker-build chainsaw ## Run the e2e tests. Expected an isolated environment using Kind.
 	@command -v $(KIND) >/dev/null 2>&1 || { \
 		echo "Kind is not installed. Please install Kind manually."; \
 		exit 1; \
 	}
-	$(KIND) create cluster --name $(KIND_CLUSTER)
-
-.PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-	$(MAKE) cleanup-test-e2e
-
-.PHONY: cleanup-test-e2e
-cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
-	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+	@$(KIND) get clusters | grep -q "^$(KIND_CLUSTER)$$" || { \
+		echo "Kind cluster '$(KIND_CLUSTER)' is not running. Please run 'make kind-create' first."; \
+		exit 1; \
+	}
+	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER)
+	kustomize build config/test-e2e --enable-helm | kubectl apply --server-side --wait=true -f -
+	@echo "Waiting for cert-manager components to be ready..."
+	@kubectl wait --for=condition=Available deployment cert-manager -n cert-manager --timeout=300s
+	@kubectl wait --for=condition=Available deployment cert-manager-webhook -n cert-manager --timeout=300s
+	@kubectl wait --for=condition=Available deployment cert-manager-cainjector -n cert-manager --timeout=300s
+	@echo "Waiting for CA certificate to be ready..."
+	@kubectl wait --for=condition=Ready certificate auth-provider-openfga-auth-provider-openfga-ca-cert -n cert-manager --timeout=300s
+	@echo "Waiting for ClusterIssuers to be ready..."
+	@kubectl wait --for=condition=Ready clusterissuer auth-provider-openfga-selfsigned-cluster-issuer --timeout=300s
+	@kubectl wait --for=condition=Ready clusterissuer auth-provider-openfga-auth-provider-openfga-ca-cluster-issuer --timeout=300s
+	@echo "Waiting for controller manager to be ready..."
+	@kubectl wait --for=condition=Available deployment auth-provider-openfga-controller-manager -n auth-provider-openfga-system --timeout=300s
+	@echo "Waiting for webhook to be ready..."
+	@kubectl wait --for=condition=Available deployment auth-provider-openfga-authz-webhook -n auth-provider-openfga-system --timeout=300s
+	@echo "Waiting for OpenFGA to be ready..."
+	@kubectl wait --for=condition=Available deployment openfga -n openfga-system --timeout=300s
+	@echo "All components are ready. Running chainsaw tests..."
+	"$(CHAINSAW)" test test/
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -157,6 +174,34 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
+##@ Kind
+
+.PHONY: kind-create
+kind-create: ## Create a Kind cluster for e2e testing.
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	@$(KIND) get clusters | grep -q "^$(KIND_CLUSTER)$$" && { \
+		echo "Kind cluster '$(KIND_CLUSTER)' already exists."; \
+	} || { \
+		echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
+		$(KIND) create cluster --name $(KIND_CLUSTER); \
+	}
+
+.PHONY: kind-delete
+kind-delete: ## Delete the Kind cluster used for e2e testing.
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	@$(KIND) get clusters | grep -q "^$(KIND_CLUSTER)$$" && { \
+		echo "Deleting Kind cluster '$(KIND_CLUSTER)'..."; \
+		$(KIND) delete cluster --name $(KIND_CLUSTER); \
+	} || { \
+		echo "Kind cluster '$(KIND_CLUSTER)' does not exist."; \
+	}
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -194,6 +239,8 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+CHAINSAW ?= $(LOCALBIN)/chainsaw
+ZITADEL_TOOLS ?= $(LOCALBIN)/zitadel-tools
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -203,6 +250,8 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= $(shell cat .golangci-version 2>/dev/null || echo "v2.1.6")
+CHAINSAW_VERSION ?= v0.2.9
+ZITADEL_TOOLS_VERSION ?= latest
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -231,6 +280,41 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: chainsaw
+chainsaw: $(CHAINSAW) ## Download chainsaw locally if necessary.
+$(CHAINSAW): $(LOCALBIN)
+	$(call go-install-tool,$(CHAINSAW),github.com/kyverno/chainsaw,$(CHAINSAW_VERSION))
+
+.PHONY: zitadel-tools
+zitadel-tools: $(ZITADEL_TOOLS) ## Download zitadel-tools locally if necessary.
+$(ZITADEL_TOOLS): $(LOCALBIN)
+	$(call go-install-tool,$(ZITADEL_TOOLS),github.com/zitadel/zitadel-tools,$(ZITADEL_TOOLS_VERSION))
+
+.PHONY: zitadel-jwt
+zitadel-jwt: zitadel-tools ## Generate JWT token from machine key for Zitadel authentication.
+	@if [ ! -f "./machinekey/zitadel-admin-sa.json" ]; then \
+		echo "Error: Machine key file './machinekey/zitadel-admin-sa.json' not found."; \
+		echo "Please ensure the machine key file exists before running this command."; \
+		exit 1; \
+	fi
+	@echo "Generating JWT token from machine key..."
+	$(ZITADEL_TOOLS) key2jwt --audience=http://localhost:8080 --key=./machinekey/zitadel-admin-sa.json
+
+.PHONY: zitadel-token
+zitadel-token: zitadel-tools ## Generate access token for Zitadel API authentication.
+	@echo "Generating JWT token from machine key..."
+	@JWT_TOKEN=$$($(MAKE) zitadel-jwt 2>/dev/null | tail -n 1); \
+	echo "Exchanging JWT for access token..."; \
+	curl --location 'http://localhost:8080/oauth/v2/token' \
+		--header 'Content-Type: application/x-www-form-urlencoded' \
+		--data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+		--data-urlencode 'scope=urn:zitadel:iam:org:project:id:zitadel:aud' \
+		--data-urlencode "assertion=$$JWT_TOKEN" \
+		--silent --show-error | jq -r '.access_token' 2>/dev/null || { \
+		echo "Error: Failed to get access token. Please check your Zitadel configuration and network connectivity."; \
+		exit 1; \
+	}
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
