@@ -56,6 +56,26 @@ type LeaderElectionConfig struct {
 	ReleaseOnCancel bool
 }
 
+// ZitadelConfig holds configuration for connecting to a Zitadel instance
+// +kubebuilder:object:generate=true
+// It is consumed by the controller command to initialise the internal Zitadel
+// HTTP client that reconciler implementations can re-use.
+// All fields are plain strings so they can be easily provided via flags or
+// environment variables.
+type ZitadelConfig struct {
+	// BaseURL is the root URL of the Zitadel instance, e.g.
+	// "https://my-org.zitadel.cloud".
+	BaseURL string
+
+	// Token is the access token (without the type prefix) that the controller
+	// will use when calling the Zitadel API.
+	Token string
+
+	// TokenType is the type/prefix of the access token, typically "Bearer".
+	// If left empty, the controller will default it to "Bearer".
+	TokenType string
+}
+
 // ControllerConfig holds controller-specific configuration
 type ControllerConfig struct {
 	MetricsAddr   string
@@ -69,6 +89,9 @@ type ControllerConfig struct {
 	// Certificate configurations
 	Metrics MetricsConfig
 	Webhook WebhookConfig
+
+	// Zitadel connection details
+	Zitadel ZitadelConfig
 }
 
 // NewControllerConfig returns a ControllerConfig with sensible defaults
@@ -95,6 +118,9 @@ func NewControllerConfig() *ControllerConfig {
 		Webhook: WebhookConfig{
 			CertName: "tls.crt",
 			CertKey:  "tls.key",
+		},
+		Zitadel: ZitadelConfig{
+			TokenType: "Bearer",
 		},
 	}
 }

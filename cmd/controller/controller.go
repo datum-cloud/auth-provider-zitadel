@@ -16,7 +16,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	controller "go.miloapis.com/auth-provider-zitadel/internal/controller"
+	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
+
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
+	gozimadel "go.miloapis.com/auth-provider-zitadel/internal/zitadel"
 )
 
 var (
@@ -25,6 +29,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(iammiloapiscomv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -84,16 +89,24 @@ and manages the auth provider lifecycle.`,
 	cmd.Flags().StringVar(&cfg.Metrics.CertKey, "metrics-cert-key", cfg.Metrics.CertKey,
 		"The name of the metrics server key file.")
 
+	// Zitadel connection flags
+	cmd.Flags().StringVar(&cfg.Zitadel.BaseURL, "zitadel-base-url", cfg.Zitadel.BaseURL,
+		"Base URL of the Zitadel instance, e.g. https://example.zitadel.cloud (required)")
+	cmd.Flags().StringVar(&cfg.Zitadel.Token, "zitadel-token", cfg.Zitadel.Token,
+		"Access token used to authenticate with Zitadel APIs (required)")
+	cmd.Flags().StringVar(&cfg.Zitadel.TokenType, "zitadel-token-type", cfg.Zitadel.TokenType,
+		"Type of the Zitadel access token, typically 'Bearer'.")
+
 	return cmd
 }
 
 func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConfig) error {
-	setupLog := ctrl.Log.WithName("setup")
-	setupLog.Info("Starting controller manager")
+	log := ctrl.Log.WithName("setup")
+	log.Info("Starting controller manager")
 
 	// Log leader election configuration
 	if cfg.LeaderElection.Enabled {
-		setupLog.Info("Leader election enabled",
+		log.Info("Leader election enabled",
 			"id", cfg.LeaderElection.ID,
 			"namespace", cfg.LeaderElection.Namespace,
 			"resource-lock", cfg.LeaderElection.ResourceLock,
@@ -103,13 +116,13 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 			"release-on-cancel", cfg.LeaderElection.ReleaseOnCancel,
 		)
 	} else {
-		setupLog.Info("Leader election disabled")
+		log.Info("Leader election disabled")
 	}
 
 	// Get TLS options
 	tlsOpts := cfg.GetTLSOptions()
 	if !cfg.EnableHTTP2 {
-		setupLog.Info("disabling http/2")
+		log.Info("disabling http/2")
 	}
 
 	// Create watchers for metrics and webhooks certificates
@@ -117,7 +130,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 
 	// Setup webhook certificate watcher
 	if len(cfg.Webhook.CertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
+		log.Info("Initializing webhook certificate watcher using provided certificates",
 			"webhook-cert-path", cfg.Webhook.CertPath, "webhook-cert-name", cfg.Webhook.CertName, "webhook-cert-key", cfg.Webhook.CertKey)
 
 		var err error
@@ -169,7 +182,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	// managed by cert-manager for the metrics server.
 	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
 	if len(cfg.Metrics.CertPath) > 0 {
-		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
+		log.Info("Initializing metrics certificate watcher using provided certificates",
 			"metrics-cert-path", cfg.Metrics.CertPath, "metrics-cert-name", cfg.Metrics.CertName, "metrics-cert-key", cfg.Metrics.CertKey)
 
 		var err error
@@ -221,17 +234,41 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
 
+	// Ensure Zitadel connection information is provided.
+	if cfg.Zitadel.BaseURL == "" {
+		return fmt.Errorf("zitadel-base-url must be specified")
+	}
+	if cfg.Zitadel.Token == "" {
+		return fmt.Errorf("zitadel-token must be specified")
+	}
+	if cfg.Zitadel.TokenType == "" {
+		cfg.Zitadel.TokenType = "Bearer"
+	}
+
+	// Initialise Zitadel client
+	zitadelClient := gozimadel.NewClient(cfg.Zitadel.BaseURL, cfg.Zitadel.Token, cfg.Zitadel.TokenType)
+
+	machineAccountCtrl := controller.MachineAccountController{
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		Zitadel: zitadelClient,
+	}
+	if err := machineAccountCtrl.SetupWithManager(mgr); err != nil {
+		log.Error(err, "Error setting up group controller")
+		return fmt.Errorf("unable to setup machine account controller: %w", err)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {
-		setupLog.Info("Adding metrics certificate watcher to manager")
+		log.Info("Adding metrics certificate watcher to manager")
 		if err := mgr.Add(metricsCertWatcher); err != nil {
 			return fmt.Errorf("unable to add metrics certificate watcher to manager: %w", err)
 		}
 	}
 
 	if webhookCertWatcher != nil {
-		setupLog.Info("Adding webhook certificate watcher to manager")
+		log.Info("Adding webhook certificate watcher to manager")
 		if err := mgr.Add(webhookCertWatcher); err != nil {
 			return fmt.Errorf("unable to add webhook certificate watcher to manager: %w", err)
 		}
@@ -244,7 +281,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		return fmt.Errorf("unable to set up ready check: %w", err)
 	}
 
-	setupLog.Info("starting manager")
+	log.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		return fmt.Errorf("problem running manager: %w", err)
 	}
