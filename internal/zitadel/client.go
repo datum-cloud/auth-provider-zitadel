@@ -95,7 +95,11 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}, 
 		log.Error(err, "Failed to send request")
 		return fmt.Errorf("do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error(closeErr, "Failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Treat 404 specially so callers can distinguish a missing resource

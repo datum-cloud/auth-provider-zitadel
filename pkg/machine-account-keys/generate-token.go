@@ -215,7 +215,11 @@ func exchangeJWTForAccessToken(jwtToken, zitadelURL, scope string) (string, erro
 		logger.Error(err, "Failed to make HTTP request", "tokenURL", tokenURL)
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logger.Error(closeErr, "Failed to close response body")
+		}
+	}()
 
 	logger.Info("Received HTTP response", "statusCode", resp.StatusCode)
 
