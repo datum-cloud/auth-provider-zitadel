@@ -72,22 +72,73 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # - CERT_MANAGER_INSTALL_SKIP=true
 KIND_CLUSTER ?= auth-provider-zitadel-test-e2e
 
-.PHONY: setup-test-e2e
-setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
-	@command -v $(KIND) >/dev/null 2>&1 || { \
-		echo "Kind is not installed. Please install Kind manually."; \
-		exit 1; \
-	}
-	$(KIND) create cluster --name $(KIND_CLUSTER)
+.PHONY: test-chainsaw
+test-chainsaw: chainsaw ## Run chainsaw tests directly without setup.
+	"$(CHAINSAW)" test test/
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-	$(MAKE) cleanup-test-e2e
-
-.PHONY: cleanup-test-e2e
-cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
-	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel via docker-compose.
+	@echo "Starting Zitadel via docker-compose..."
+	@docker-compose up -d
+	@echo "Waiting for Zitadel to be ready..."
+	@start_time=$$(date +%s); \
+	while ! curl -f http://localhost:8080/debug/ready >/dev/null 2>&1; do \
+		duration=$$(( $$(date +%s) - $$start_time )); \
+		if [ $$duration -ge 60 ]; then \
+			echo "Zitadel failed to start within 60 seconds"; \
+			docker-compose logs; \
+			docker-compose down; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done
+	@echo "Checking kubectl connectivity..."
+	@kubectl cluster-info || { echo "ERROR: kubectl not connected to a cluster"; exit 1; }
+	@$(MAKE) install-external-crds || { \
+		echo "ERROR: Failed to install external CRDs"; \
+		docker-compose down; \
+		exit 1; \
+	}
+	@echo "Generating Zitadel token..."
+	@ZITADEL_TOKEN=$$($(MAKE) zitadel-token 2>/dev/null | tail -n 1) || { \
+		echo "ERROR: Failed to generate Zitadel token"; \
+		docker-compose down; \
+		exit 1; \
+	}; \
+	if [ -z "$$ZITADEL_TOKEN" ]; then \
+		echo "ERROR: Empty Zitadel token generated"; \
+		docker-compose down; \
+		exit 1; \
+	fi; \
+	export ZITADEL_DOMAIN=http://localhost:8080; \
+	export ZITADEL_TOKEN=$$ZITADEL_TOKEN; \
+	echo "Generated token: $$ZITADEL_TOKEN"; \
+	echo "Ensuring port 8081 is free..."; \
+	pids=$$(lsof -ti tcp:8081 2>/dev/null || true); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true; \
+	LOG_FILE=./test/controller.log; \
+	echo "Starting controller in background... (logs: $$LOG_FILE)"; \
+	go run cmd/main.go controller  --server-config=test/server-config.yaml --zitadel-base-url=http://localhost:8080 --zitadel-machine-account-key-path=./machinekey/zitadel-admin-sa.json \ > $$LOG_FILE 2>&1 & \
+	CONTROLLER_PID=$$!; \
+	KILL_TARGET="$$CONTROLLER_PID"; \
+	trap "kill $$KILL_TARGET 2>/dev/null || true" EXIT; \
+	echo "Controller started with PID: $$CONTROLLER_PID"; \
+	echo "Waiting for controller to be ready..."; \
+	sleep 10; \
+	if ! kill -0 $$CONTROLLER_PID 2>/dev/null; then \
+		echo "ERROR: Controller process died. See $$LOG_FILE for details"; \
+		docker-compose down; \
+		exit 1; \
+	fi; \
+	echo "Running chainsaw tests..."; \
+	ZITADEL_DOMAIN=$$ZITADEL_DOMAIN ZITADEL_TOKEN=$$ZITADEL_TOKEN "$(CHAINSAW)" test test/ || TEST_EXIT_CODE=$$?; \
+	echo "Stopping controller..."; \
+	kill $$KILL_TARGET 2>/dev/null || true; \
+	echo "Controller logs saved at $$LOG_FILE"; \
+	echo "Stopping docker-compose..."; \
+	docker-compose down; \
+	echo "Cleaning up external CRDs..."; \
+	$(MAKE) uninstall-external-crds; \
+	exit $${TEST_EXIT_CODE:-0}
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -114,6 +165,27 @@ build: manifests generate fmt vet ## Build manager binary.
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
+
+.PHONY: run-controller
+run-controller: manifests generate fmt vet install-external-crds ## Run the controller manually with configurable flags (requires Zitadel).
+	@echo "Starting controller with configurable flags..."
+	@echo "Note: Zitadel must be running for the controller to work properly."
+	@echo ""
+	@ZITADEL_BASE_URL=$${ZITADEL_BASE_URL:-http://localhost:8080}; \
+	echo "Generating Zitadel token..."; \
+	ZITADEL_TOKEN=$$($(MAKE) zitadel-token 2>/dev/null | tail -n 1) || { \
+		echo "ERROR: Failed to generate Zitadel token."; \
+		echo "Make sure Zitadel is running and machine key exists at './machinekey/zitadel-admin-sa.json'"; \
+		exit 1; \
+	}; \
+	echo "Ensuring port 8081 is free..."; \
+	pids=$$(lsof -ti tcp:8081 2>/dev/null || true); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true; \
+	echo "Running controller:"; \
+	echo ""; \
+	go run ./cmd/main.go controller \
+		--zitadel-base-url=$$ZITADEL_BASE_URL \
+		--zitadel-machine-account-key-path=./machinekey/zitadel-admin-sa.json \
+		--server-config=test/server-config.yaml
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -157,6 +229,34 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
+##@ Kind
+
+.PHONY: kind-create
+kind-create: ## Create a Kind cluster for e2e testing.
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	@$(KIND) get clusters | grep -q "^$(KIND_CLUSTER)$$" && { \
+		echo "Kind cluster '$(KIND_CLUSTER)' already exists."; \
+	} || { \
+		echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
+		$(KIND) create cluster --name $(KIND_CLUSTER); \
+	}
+
+.PHONY: kind-delete
+kind-delete: ## Delete the Kind cluster used for e2e testing.
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	@$(KIND) get clusters | grep -q "^$(KIND_CLUSTER)$$" && { \
+		echo "Deleting Kind cluster '$(KIND_CLUSTER)'..."; \
+		$(KIND) delete cluster --name $(KIND_CLUSTER); \
+	} || { \
+		echo "Kind cluster '$(KIND_CLUSTER)' does not exist."; \
+	}
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -180,6 +280,19 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
+.PHONY: install-external-crds
+install-external-crds: ## Install external CRDs from milo repository.
+	@echo "Installing MachineAccount CRDs from milo repository..."
+	@kubectl apply -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=main || { \
+		echo "ERROR: Failed to install MachineAccount CRDs from milo repository."; \
+		exit 1; \
+	}
+
+.PHONY: uninstall-external-crds
+uninstall-external-crds: ## Uninstall external CRDs from milo repository.
+	@echo "Uninstalling MachineAccount CRDs..."
+	@kubectl delete crd machineaccounts.iam.miloapis.com 2>/dev/null || true
+
 ##@ Dependencies
 
 ## Location to install dependencies to
@@ -194,6 +307,8 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+CHAINSAW ?= $(LOCALBIN)/chainsaw
+ZITADEL_TOOLS ?= $(LOCALBIN)/zitadel-tools
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -203,6 +318,8 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= $(shell cat .golangci-version 2>/dev/null || echo "v2.1.6")
+CHAINSAW_VERSION ?= v0.2.9
+ZITADEL_TOOLS_VERSION ?= latest
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -231,6 +348,41 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: chainsaw
+chainsaw: $(CHAINSAW) ## Download chainsaw locally if necessary.
+$(CHAINSAW): $(LOCALBIN)
+	$(call go-install-tool,$(CHAINSAW),github.com/kyverno/chainsaw,$(CHAINSAW_VERSION))
+
+.PHONY: zitadel-tools
+zitadel-tools: $(ZITADEL_TOOLS) ## Download zitadel-tools locally if necessary.
+$(ZITADEL_TOOLS): $(LOCALBIN)
+	$(call go-install-tool,$(ZITADEL_TOOLS),github.com/zitadel/zitadel-tools,$(ZITADEL_TOOLS_VERSION))
+
+.PHONY: zitadel-jwt
+zitadel-jwt: zitadel-tools ## Generate JWT token from machine key for Zitadel authentication.
+	@if [ ! -f "./machinekey/zitadel-admin-sa.json" ]; then \
+		echo "Error: Machine key file './machinekey/zitadel-admin-sa.json' not found."; \
+		echo "Please ensure the machine key file exists before running this command."; \
+		exit 1; \
+	fi
+	@echo "Generating JWT token from machine key..."
+	$(ZITADEL_TOOLS) key2jwt --audience=http://localhost:8080 --key=./machinekey/zitadel-admin-sa.json
+
+.PHONY: zitadel-token
+zitadel-token: zitadel-tools ## Generate access token for Zitadel API authentication.
+	@echo "Generating JWT token from machine key..."
+	@JWT_TOKEN=$$($(MAKE) zitadel-jwt 2>/dev/null | tail -n 1); \
+	echo "Exchanging JWT for access token..."; \
+	curl --location 'http://localhost:8080/oauth/v2/token' \
+		--header 'Content-Type: application/x-www-form-urlencoded' \
+		--data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+		--data-urlencode 'scope=urn:zitadel:iam:org:project:id:zitadel:aud' \
+		--data-urlencode "assertion=$$JWT_TOKEN" \
+		--silent --show-error | jq -r '.access_token' 2>/dev/null || { \
+		echo "Error: Failed to get access token. Please check your Zitadel configuration and network connectivity."; \
+		exit 1; \
+	}
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
