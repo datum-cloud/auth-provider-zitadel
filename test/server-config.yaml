@@ -1,0 +1,7 @@
+discovery:
+  mode: "single"
+  internalServiceDiscovery: false
+  discoveryKubeconfigPath: ""
+  projectKubeconfigPath: ""
+downstreamResourceManagement:
+  kubeconfigPath: ""
