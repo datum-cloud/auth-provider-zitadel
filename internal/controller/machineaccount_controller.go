@@ -62,7 +62,7 @@ func (f *machineAccountFinalizer) Finalize(ctx context.Context, obj client.Objec
 	if !ok {
 		err := fmt.Errorf("unexpected object type %T, expected MachineAccount", obj)
 		log.Error(err, "Type assertion failed")
-		return finalizer.Result{}, err
+		return finalizer.Result{}, fmt.Errorf("type assertion failed: %w", err)
 	}
 
 	log.Info("Checking if machine account exists in Zitadel", "username", machineAccount.GetUID())
@@ -72,7 +72,7 @@ func (f *machineAccountFinalizer) Finalize(ctx context.Context, obj client.Objec
 		return finalizer.Result{}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get user from Zitadel", "userName", machineAccount.GetUID())
-		return finalizer.Result{}, err
+		return finalizer.Result{}, fmt.Errorf("failed to get user from Zitadel: %w", err)
 	}
 
 	log.Info("Deleting machine account from Zitadel", "userName", machineAccount.GetUID())
@@ -81,7 +81,7 @@ func (f *machineAccountFinalizer) Finalize(ctx context.Context, obj client.Objec
 		log.Info("Machine account already deleted from Zitadel", "username", machineAccount.GetUID())
 	} else if err != nil {
 		log.Error(err, "Failed to delete user from Zitadel", "username", machineAccount.GetUID())
-		return finalizer.Result{}, err
+		return finalizer.Result{}, fmt.Errorf("failed to delete user from Zitadel: %w", err)
 	}
 
 	log.Info("Successfully finalized machine account", "username", machineAccount.GetUID())
@@ -112,7 +112,7 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 		return ctrl.Result{}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get MachineAccount resource")
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to get MachineAccount resource: %w", err)
 	}
 
 	// Funalizers must run before we update the MachineAccount Status,
@@ -147,18 +147,18 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 		})
 		if err != nil {
 			log.Error(err, "Failed to create machine user in Zitadel", "username", machineAccount.GetUID())
-			return ctrl.Result{}, err
+			return ctrl.Result{}, fmt.Errorf("failed to create machine user in Zitadel: %w", err)
 		}
 		log.Info("Successfully created machine account in Zitadel", "username", machineAccount.GetUID())
 	} else if err != nil {
 		log.Error(err, "Failed to get user from Zitadel", "username", machineAccount.GetUID())
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to get user from Zitadel: %w", err)
 	}
 
 	// Update the machine account state in Zitadel if it is different from the desired state
 	if machineAccount.Status.State != machineAccount.Spec.State {
 		if err := r.updateMachineAccountState(ctx, machineAccount); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{}, fmt.Errorf("failed to update machine account state: %w", err)
 		}
 	}
 
@@ -180,7 +180,7 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	meta.SetStatusCondition(&machineAccount.Status.Conditions, machineAccountCondition)
 	if err := r.Client.Status().Update(ctx, machineAccount); err != nil {
 		log.Error(err, "Failed to update MachineAccount status")
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to update MachineAccount status: %w", err)
 	}
 
 	log.Info("Successfully reconciled MachineAccount")
@@ -190,7 +190,6 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 // updateMachineAccountState updates the state of a machine account in Zitadel
 func (r *MachineAccountController) updateMachineAccountState(ctx context.Context, machineAccount *iammiloapiscomv1alpha1.MachineAccount) error {
 	log := logf.FromContext(ctx).WithName("machineaccount-reconciler")
-	log.Info("el estatus es ", machineAccount.Spec.State)
 
 	skipUpdate := false
 	var updateFnc func(ctx context.Context, userID string) error
