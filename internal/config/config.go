@@ -18,6 +18,7 @@ package config
 
 import (
 	"crypto/tls"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -64,11 +65,22 @@ type WebhookConfig struct {
 	CertKey  string
 }
 
+type LeaderElectionConfig struct {
+	Enabled         bool
+	ID              string
+	Namespace       string
+	ResourceLock    string
+	LeaseDuration   time.Duration
+	RenewDeadline   time.Duration
+	RetryPeriod     time.Duration
+	ReleaseOnCancel bool
+}
+
 // ControllerConfig holds controller-specific configuration
 type ControllerConfig struct {
+	LeaderElection            LeaderElectionConfig
 	Metrics                   MetricsConfig
 	Webhook                   WebhookConfig
-	EnableLeaderElection      bool
 	ProbeAddr                 string
 	EnableHTTP2               bool
 	TlsOpts                   []func(*tls.Config)
@@ -82,7 +94,30 @@ type ControllerConfig struct {
 
 // NewControllerConfig returns a ControllerConfig with sensible defaults
 func NewControllerConfig() *ControllerConfig {
-	return &ControllerConfig{}
+	return &ControllerConfig{
+		ProbeAddr:   ":8081",
+		EnableHTTP2: false,
+		LeaderElection: LeaderElectionConfig{
+			Enabled:         false,
+			ID:              "auth-provider-zitadel-leader",
+			Namespace:       "",               // Use default namespace if empty
+			ResourceLock:    "leases",         // Default to leases
+			LeaseDuration:   15 * time.Second, // Default lease duration
+			RenewDeadline:   10 * time.Second, // Default renew deadline
+			RetryPeriod:     2 * time.Second,  // Default retry period
+			ReleaseOnCancel: false,            // Default to false for safety
+		},
+		Metrics: MetricsConfig{
+			CertName:      "tls.crt",
+			CertKey:       "tls.key",
+			SecureMetrics: true,
+			Addr:          "0",
+		},
+		Webhook: WebhookConfig{
+			CertName: "tls.crt",
+			CertKey:  "tls.key",
+		},
+	}
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
