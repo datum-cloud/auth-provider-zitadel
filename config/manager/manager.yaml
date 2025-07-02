@@ -76,6 +76,9 @@ spec:
           # Global configuration
           - --log-level=$(LOG_LEVEL)
           - --log-format=$(LOG_FORMAT)
+          # Zitadel configuration
+          - --zitadel-base-url=$(ZITADEL_BASE_URL)
+          - --zitadel-machine-account-key-path=$(ZITADEL_MACHINE_ACCOUNT_KEY_PATH)
         image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
         name: controller-manager
         env:
@@ -108,6 +111,11 @@ spec:
           value: "info"
         - name: LOG_FORMAT
           value: "json"
+        # Zitadel configuration environment variables
+        - name: ZITADEL_BASE_URL
+          value: "https://zitadel.datum-cloud.com"
+        - name: ZITADEL_MACHINE_ACCOUNT_KEY_PATH
+          value: "/etc/zitadel/machine-account-key.json"
         ports:
         - containerPort: 8081
           name: health
