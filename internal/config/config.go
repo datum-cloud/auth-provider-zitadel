@@ -88,7 +88,7 @@ func NewControllerConfig() *ControllerConfig {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +k8s:defaulter-gen=true
 
-type ServicesOperator struct {
+type AuthProviderZitadel struct {
 	metav1.TypeMeta
 
 	Discovery                    DiscoveryConfig                    `json:"discovery"`
@@ -158,5 +158,5 @@ func (c *DiscoveryConfig) ProjectRestConfig() (*rest.Config, error) {
 }
 
 func init() {
-	SchemeBuilder.Register(&ServicesOperator{})
+	SchemeBuilder.Register(&AuthProviderZitadel{})
 }

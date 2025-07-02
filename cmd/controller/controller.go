@@ -135,7 +135,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		os.Exit(1)
 	}
 
-	var serverConfig config.ServicesOperator
+	var serverConfig config.AuthProviderZitadel
 	data, err := os.ReadFile(cfg.ServerConfigFile)
 	if err != nil {
 		setupLog.Error(fmt.Errorf("unable to read server config from %q", cfg.ServerConfigFile), "")
@@ -372,7 +372,7 @@ func (p *wrappedSingleClusterProvider) Run(ctx context.Context, mgr mcmanager.Ma
 }
 
 func initializeClusterDiscovery(
-	serverConfig config.ServicesOperator,
+	serverConfig config.AuthProviderZitadel,
 	deploymentCluster cluster.Cluster,
 	scheme *runtime.Scheme,
 ) (runnables []manager.Runnable, provider runnableProvider, err error) {
