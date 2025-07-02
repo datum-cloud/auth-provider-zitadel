@@ -30,3 +30,11 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - infrastructure.miloapis.com
+  resources:
+  - projectcontrolplanes
+  verbs:
+  - get
+  - list
+  - watch
