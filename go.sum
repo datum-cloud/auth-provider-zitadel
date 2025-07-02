@@ -163,6 +163,10 @@ github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a h1:ajVsfF
 github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a/go.mod h1:Hhy9uy3M02js4KINATr9sPtXoP/vkiWvLQF6OIG5Imc=
 go.miloapis.com/milo v0.0.0-20250626211327-1b06937505c9 h1:ynVlbeY6bSvtd1tlKN0oIIha/cYf34Yd7kRJdP356IM=
 go.miloapis.com/milo v0.0.0-20250626211327-1b06937505c9/go.mod h1:hh74+itTatDKu88z8rOItbrn3g98jei7ecaMKjJpFds=
+go.miloapis.com/milo v0.0.0-20250702165727-c016b9f5d66c h1:zk71USvsNLPFlh6jKzgeMNONqdbUl/tWUAhn0wlC2zs=
+go.miloapis.com/milo v0.0.0-20250702165727-c016b9f5d66c/go.mod h1:hh74+itTatDKu88z8rOItbrn3g98jei7ecaMKjJpFds=
+go.miloapis.com/milo v0.0.0-20250702222503-c57690f04ab0 h1:c3Y+4eOcYIbeAdDhUOlMpJueNYBxIXm7QfA8qnUmaS8=
+go.miloapis.com/milo v0.0.0-20250702222503-c57690f04ab0/go.mod h1:hh74+itTatDKu88z8rOItbrn3g98jei7ecaMKjJpFds=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 h1:F7Jx+6hwnZ41NSFTO5q4LYDtJRXBf2PD0rNBkeB/lus=
