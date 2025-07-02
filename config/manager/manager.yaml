@@ -79,6 +79,8 @@ spec:
           # Zitadel configuration
           - --zitadel-base-url=$(ZITADEL_BASE_URL)
           - --zitadel-machine-account-key-path=$(ZITADEL_MACHINE_ACCOUNT_KEY_PATH)
+          # Controller manager configuration
+          - --server-config=$(ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH)
         image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
         name: controller-manager
         env:
@@ -116,6 +118,9 @@ spec:
           value: "https://zitadel.datum-cloud.com"
         - name: ZITADEL_MACHINE_ACCOUNT_KEY_PATH
           value: "/etc/zitadel/machine-account-key.json"
+        # Controller manager configuration environment variables
+        - name: ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH
+          value: "/etc/zitadel/controller-manager-config.yaml"
         ports:
         - containerPort: 8081
           name: health
