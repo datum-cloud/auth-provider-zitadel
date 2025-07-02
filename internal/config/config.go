@@ -99,7 +99,7 @@ func NewControllerConfig() *ControllerConfig {
 		EnableHTTP2: false,
 		LeaderElection: LeaderElectionConfig{
 			Enabled:         false,
-			ID:              "28f116c3.my.domain",
+			ID:              "auth-provider-zitadel-leader",
 			Namespace:       "",               // Use default namespace if empty
 			ResourceLock:    "leases",         // Default to leases
 			LeaseDuration:   15 * time.Second, // Default lease duration
