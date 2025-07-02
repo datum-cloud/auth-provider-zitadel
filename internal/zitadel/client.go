@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
+	"golang.org/x/oauth2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -25,7 +25,7 @@ import (
 //
 // Example usage:
 //
-//	c := zitadel.NewClient("https://example.zitadel.cloud", "<access-token>", "Bearer")
+//	c := zitadel.NewClientWithTokenSource("https://example.zitadel.cloud", tokenSource)
 //	resp, err := c.CreateMachineUser(ctx, zitadel.MachineUserRequest{ ... })
 //
 // As we expand the client we will add more methods that call new endpoints.
@@ -35,24 +35,18 @@ import (
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
-	token      string
-	tokenType  string
 }
 
 // NewClient returns a ready-to-use ZITADEL client.
 //
 //	baseURL   – URL of your ZITADEL instance (e.g. "https://my-org.zitadel.cloud")
-//	token     – the access/ID token value (without the token type prefix)
-//	tokenType – token prefix, typically "Bearer" or "Basic".
-func NewClient(baseURL, token, tokenType string) *Client {
+func NewClientWithTokenSource(baseURL string, tokenSource oauth2.TokenSource) *Client {
 	log := logf.Log.WithName("zitadel-client")
-	log.Info("Creating new ZITADEL client", "baseURL", baseURL, "tokenType", tokenType)
+	log.Info("Creating new ZITADEL client with token source", "baseURL", baseURL)
 
 	c := &Client{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: oauth2.NewClient(context.Background(), tokenSource),
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		token:      token,
-		tokenType:  tokenType,
 	}
 
 	return c
@@ -84,9 +78,6 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}, 
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("%s %s", c.tokenType, c.token))
 	}
 
 	log.V(1).Info("Sending request")
