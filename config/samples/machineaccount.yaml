@@ -1,0 +1,21 @@
+apiVersion: iam.miloapis.com/v1alpha1
+kind: MachineAccount
+metadata:
+  name: example-service-account
+  namespace: default
+  annotations:
+    kubernetes.io/description: "Service account for automated CI/CD pipeline"
+spec:
+  # The state can be either Active or Inactive
+  # Active: The machine account can be used to authenticate
+  # Inactive: The machine account is prohibited from authenticating
+  state: Active
+
+# The status section will be populated by the controller
+# status:
+#   email: example-service-account@default.project-name.global-suffix
+#   conditions:
+#   - type: Ready
+#     status: "True"
+#     reason: AccountCreated
+#     message: "Machine account successfully created"

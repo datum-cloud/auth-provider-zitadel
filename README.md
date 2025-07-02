@@ -46,3 +46,27 @@ workflows?"*
    lifetimes and refresh capabilities
 7. **Integration Bridge**: Seamless integration with Milo's Kubernetes-based
 APIs
+
+## Testing
+
+Follow these steps to run the end-to-end (e2e) tests locally:
+
+1. Create a local Kind cluster:
+
+   ```bash
+   make kind-create
+   ```
+
+2. Run the e2e test suite:
+
+   ```bash
+   make test-e2e
+   ```
+
+3. Inspect the controller logs once the tests have finished:
+
+   ```bash
+   cat test/controller.log
+   ```
+
+

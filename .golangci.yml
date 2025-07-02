@@ -19,13 +19,12 @@ linters:
     - revive
     - staticcheck
     - unconvert
-    - unparam
     - unused
   settings:
     revive:
       rules:
-        - name: comment-spacings
-        - name: import-shadowing
+        - name: dot-imports
+          disabled: true
   exclusions:
     generated: lax
     rules:
@@ -35,7 +34,7 @@ linters:
       - linters:
           - dupl
           - lll
-        path: internal/*
+        path: ./...
     paths:
       - third_party$
       - builtin$
