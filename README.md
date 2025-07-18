@@ -68,5 +68,3 @@ Follow these steps to run the end-to-end (e2e) tests locally:
    ```bash
    cat test/controller.log
    ```
-
-
