@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -180,7 +181,10 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconc
 		log.Info("User is already deactivated", "userRef", userDeactivation.Spec.UserRef)
 	}
 
-	log.Info("Updating UserDeactivation status", "userDeactivationName", userDeactivation.GetName())
+	// Capture the current status to detect changes later
+	oldStatus := userDeactivation.Status.DeepCopy()
+
+	// Build the Ready condition and update it on the UserDeactivation resource
 	userDeactivationCondition := metav1.Condition{
 		Type:               userDeactivationReadyCondition,
 		Status:             metav1.ConditionTrue,
@@ -188,10 +192,17 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconc
 		Message:            "UserDeactivation successfully reconciled",
 		LastTransitionTime: metav1.Now(),
 	}
-	meta.SetStatusCondition(&user.Status.Conditions, userDeactivationCondition)
-	if err := r.Client.Status().Update(ctx, userDeactivation); err != nil {
-		log.Error(err, "Failed to update UserDeactivation status")
-		return ctrl.Result{}, fmt.Errorf("failed to update UserDeactivation status: %w", err)
+	meta.SetStatusCondition(&userDeactivation.Status.Conditions, userDeactivationCondition)
+
+	// Only update the status if it actually changed to avoid unnecessary API calls
+	if !equality.Semantic.DeepEqual(oldStatus, &userDeactivation.Status) {
+		log.Info("Updating UserDeactivation status", "userDeactivationName", userDeactivation.GetName())
+		if err := r.Client.Status().Update(ctx, userDeactivation); err != nil {
+			log.Error(err, "Failed to update UserDeactivation status")
+			return ctrl.Result{}, fmt.Errorf("failed to update UserDeactivation status: %w", err)
+		}
+	} else {
+		log.Info("UserDeactivation status unchanged, skipping update", "userDeactivationName", userDeactivation.GetName())
 	}
 
 	log.Info("Reconciliation completed", "userRef", userDeactivation.Spec.UserRef)
