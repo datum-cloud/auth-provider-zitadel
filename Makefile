@@ -283,7 +283,7 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 .PHONY: install-external-crds
 install-external-crds: ## Install external CRDs from milo repository.
 	@echo "Installing MachineAccount CRDs from milo repository..."
-	@kubectl apply -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=main || { \
+	@kubectl apply -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=212-add-the-ability-to-activate-and-deactivate-user-accounts-in-milo || { \
 		echo "ERROR: Failed to install MachineAccount CRDs from milo repository."; \
 		exit 1; \
 	}
