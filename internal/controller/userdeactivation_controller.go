@@ -64,19 +64,20 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 	}
 	log.Info("Running finalizers", "userDeactivationName", obj.GetName(), "userDeactivationUID", obj.GetUID())
 
-	// Get the user reference from this UserDeactivation
 	userRef := userDeactivation.Spec.UserRef.Name
 
-	log.Info("Checking for other UserDeactivation objects", "userRef", userRef)
-	otherUserDeactivationsCount, err := f.countOtherUserDeactivations(ctx, userDeactivation, userRef)
+	// Get the User to reactivate based on UserRef
+	user := &iammiloapiscomv1alpha1.User{}
+	err := f.Client.Get(ctx, client.ObjectKey{Name: userRef}, user)
 	if err != nil {
-		log.Error(err, "Failed to count other UserDeactivation objects")
-		return finalizer.Result{}, fmt.Errorf("failed to count other UserDeactivation objects: %w", err)
+		// The user must exists, otherwise the UserDeactivation object should not be created
+		log.Error(err, "Failed to get User resource", "userRef", userDeactivation.Spec.UserRef)
+		return finalizer.Result{}, fmt.Errorf("failed to get User resource: %w", err)
 	}
 
-	// If there are no other UserDeactivation objects for this user, reactivate the user
-	if otherUserDeactivationsCount == 0 {
-		log.Info("No other UserDeactivation objects found, reactivating user in Zitadel", "userRef", userRef)
+	// Webhook at Milo warranty that only one UserDeactivation object exists for a user
+	if user.Status.State == "Inactive" {
+		log.Info("Reactivating user", "userRef", userRef)
 		err = f.Zitadel.ReactivateUser(ctx, userRef)
 		if err != nil {
 			log.Error(err, "Failed to reactivate user in Zitadel", "userRef", userRef)
@@ -84,13 +85,6 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 		}
 		log.Info("Successfully reactivated user in Zitadel", "userRef", userRef)
 
-		// Update the User status to Active
-		user := &iammiloapiscomv1alpha1.User{}
-		err = f.Client.Get(ctx, client.ObjectKey{Name: userRef}, user)
-		if err != nil {
-			log.Error(err, "Failed to get User resource", "userRef", userRef)
-			return finalizer.Result{}, fmt.Errorf("failed to get User resource: %w", err)
-		}
 		user.Status.State = "Active"
 		err = f.Client.Status().Update(ctx, user)
 		if err != nil {
@@ -99,7 +93,7 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 		}
 		log.Info("Successfully updated User status to Active", "userRef", userRef)
 	} else {
-		log.Info("Other UserDeactivation objects exist for user, skipping reactivation", "userRef", userRef)
+		log.Info("Skipping reactivation, user is already active", "userRef", userRef)
 	}
 
 	return finalizer.Result{}, nil
@@ -223,34 +217,4 @@ func (r *UserDeactivationController) SetupWithManager(mgr mcmanager.Manager) err
 		For(&iammiloapiscomv1alpha1.UserDeactivation{}).
 		Named("userdeactivation").
 		Complete(r)
-}
-
-// countOtherUserDeactivations counts how many other UserDeactivation objects
-// reference the same user, excluding the current UserDeactivation object
-func (f *userDeactivationFinalizer) countOtherUserDeactivations(ctx context.Context, userDeactivation *iammiloapiscomv1alpha1.UserDeactivation, userRef string) (int, error) {
-	log := logf.FromContext(ctx).WithName("count-other-deactivations")
-
-	// List all UserDeactivation objects to see if any other ones reference the same user
-	userDeactivationList := &iammiloapiscomv1alpha1.UserDeactivationList{}
-	err := f.Client.List(ctx, userDeactivationList)
-	if err != nil {
-		log.Error(err, "Failed to list UserDeactivation objects")
-		return 0, fmt.Errorf("failed to list UserDeactivation objects: %w", err)
-	}
-
-	// Count how many UserDeactivation objects reference the same user (excluding the current one)
-	otherDeactivationsCount := 0
-	for _, item := range userDeactivationList.Items {
-		// Skip the current UserDeactivation object
-		if item.GetUID() == userDeactivation.GetUID() {
-			continue
-		}
-		// Check if this UserDeactivation references the same user
-		if item.Spec.UserRef.Name == userRef {
-			otherDeactivationsCount++
-		}
-	}
-
-	log.Info("Other UserDeactivation objects found", "userRef", userRef, "count", otherDeactivationsCount)
-	return otherDeactivationsCount, nil
 }
