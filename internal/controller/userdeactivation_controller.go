@@ -39,6 +39,8 @@ import (
 const (
 	userDeactivationFinalizerKey   = "iam.miloapis.com/userdeactivation"
 	userDeactivationReadyCondition = "Ready"
+	inactiveUserState              = "Inactive"
+	activeUserState                = "Active"
 )
 
 type UserDeactivationController struct {
@@ -76,7 +78,7 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 	}
 
 	// Webhook at Milo warranty that only one UserDeactivation object exists for a user
-	if user.Status.State == "Inactive" {
+	if user.Status.State == inactiveUserState {
 		log.Info("Reactivating user", "userRef", userRef)
 		err = f.Zitadel.ReactivateUser(ctx, userRef)
 		if err != nil {
@@ -85,7 +87,7 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 		}
 		log.Info("Successfully reactivated user in Zitadel", "userRef", userRef)
 
-		user.Status.State = "Active"
+		user.Status.State = activeUserState
 		err = f.Client.Status().Update(ctx, user)
 		if err != nil {
 			log.Error(err, "Failed to update User status", "userRef", userRef)
@@ -158,14 +160,14 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconc
 	// Deactivate the user in Zitadel
 	// The deactivation decision is based on the user's current state rather than other UserDeactivation objects
 	// to ensure deactivation occurs even if the user was accidentally reactivated through manual intervention.
-	if user.Status.State != "Inactive" {
+	if user.Status.State != inactiveUserState {
 		log.Info("Deactivating User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
 		err = r.Zitadel.DeactivateUser(ctx, user.GetName())
 		if err != nil {
 			log.Error(err, "Failed to deactivate User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
 			return ctrl.Result{}, fmt.Errorf("failed to deactivate User in Zitadel: %w", err)
 		}
-		user.Status.State = "Inactive"
+		user.Status.State = inactiveUserState
 		err = r.Client.Status().Update(ctx, user)
 		if err != nil {
 			log.Error(err, "Failed to update User status", "userRef", userDeactivation.Spec.UserRef)

@@ -37,7 +37,9 @@ import (
 )
 
 const (
-	machineAccountFinalizerKey = "iam.miloapis.com/machineaccount"
+	machineAccountFinalizerKey  = "iam.miloapis.com/machineaccount"
+	inactiveMachineAccountState = "Inactive"
+	activeMachineAccountState   = "Active"
 )
 
 // MachineAccountReconciler reconciles a MachineAccount object
@@ -194,7 +196,7 @@ func (r *MachineAccountController) updateMachineAccountState(ctx context.Context
 	skipUpdate := false
 	var updateFnc func(ctx context.Context, userID string) error
 	switch machineAccount.Spec.State {
-	case "Active":
+	case activeMachineAccountState:
 		if machineAccount.Status.State == "" {
 			log.Info("New Machine Account. Zitadel default state is Active")
 			skipUpdate = true
@@ -202,7 +204,7 @@ func (r *MachineAccountController) updateMachineAccountState(ctx context.Context
 		log.Info("Reactivating machine account", "username", machineAccount.GetName())
 		updateFnc = r.Zitadel.ReactivateUser
 
-	case "Inactive":
+	case inactiveMachineAccountState:
 		log.Info("Deactivating machine account", "username", machineAccount.GetName())
 		updateFnc = r.Zitadel.DeactivateUser
 

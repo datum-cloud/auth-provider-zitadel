@@ -132,6 +132,7 @@ and manages the auth provider lifecycle.`,
 	return cmd
 }
 
+// nolint:gocyclo
 func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConfig) error {
 	setupLog.Info("Machine Account Email address suffix", "emailAddressSuffix", cfg.EmailAddressSuffix)
 
