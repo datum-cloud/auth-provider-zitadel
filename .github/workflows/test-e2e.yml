@@ -17,6 +17,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install docker-compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose --version
+
       - name: Install the latest version of kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
@@ -26,7 +32,14 @@ jobs:
       - name: Verify kind installation
         run: kind version
 
+      - name: Create kind cluster
+        run: make kind-create
+
       - name: Running Test e2e
         run: |
           go mod tidy
           make test-e2e
+
+      - name: Cleanup kind cluster
+        if: always()
+        run: make kind-delete
