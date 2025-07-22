@@ -132,6 +132,7 @@ and manages the auth provider lifecycle.`,
 	return cmd
 }
 
+// nolint:gocyclo
 func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConfig) error {
 	setupLog.Info("Machine Account Email address suffix", "emailAddressSuffix", cfg.EmailAddressSuffix)
 
@@ -368,7 +369,15 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		Zitadel:            zitadelHtppClient,
 		EmailAddressSuffix: cfg.EmailAddressSuffix,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ExportPolicy")
+		setupLog.Error(err, "unable to create controller", "controller", "MachinaAccount")
+		os.Exit(1)
+	}
+
+	if err = (&controller.UserDeactivationController{
+		Client:  downstreamCluster.GetClient(),
+		Zitadel: zitadelHtppClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UserDeactivation")
 		os.Exit(1)
 	}
 

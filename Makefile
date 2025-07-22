@@ -78,16 +78,18 @@ test-chainsaw: chainsaw ## Run chainsaw tests directly without setup.
 
 .PHONY: test-e2e
 test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel via docker-compose.
+	@echo "Cleaning up any existing docker-compose setup..."
+	@docker-compose down -v --remove-orphans 2>/dev/null || true
 	@echo "Starting Zitadel via docker-compose..."
 	@docker-compose up -d
 	@echo "Waiting for Zitadel to be ready..."
 	@start_time=$$(date +%s); \
 	while ! curl -f http://localhost:8080/debug/ready >/dev/null 2>&1; do \
 		duration=$$(( $$(date +%s) - $$start_time )); \
-		if [ $$duration -ge 60 ]; then \
-			echo "Zitadel failed to start within 60 seconds"; \
+		if [ $$duration -ge 600 ]; then \
+			echo "Zitadel failed to start within 600 seconds"; \
 			docker-compose logs; \
-			docker-compose down; \
+			docker-compose down -v; \
 			exit 1; \
 		fi; \
 		sleep 2; \
@@ -96,18 +98,18 @@ test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel 
 	@kubectl cluster-info || { echo "ERROR: kubectl not connected to a cluster"; exit 1; }
 	@$(MAKE) install-external-crds || { \
 		echo "ERROR: Failed to install external CRDs"; \
-		docker-compose down; \
+		docker-compose down -v; \
 		exit 1; \
 	}
 	@echo "Generating Zitadel token..."
 	@ZITADEL_TOKEN=$$($(MAKE) zitadel-token 2>/dev/null | tail -n 1) || { \
 		echo "ERROR: Failed to generate Zitadel token"; \
-		docker-compose down; \
+		docker-compose down -v; \
 		exit 1; \
 	}; \
 	if [ -z "$$ZITADEL_TOKEN" ]; then \
 		echo "ERROR: Empty Zitadel token generated"; \
-		docker-compose down; \
+		docker-compose down -v; \
 		exit 1; \
 	fi; \
 	export ZITADEL_DOMAIN=http://localhost:8080; \
@@ -126,7 +128,7 @@ test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel 
 	sleep 10; \
 	if ! kill -0 $$CONTROLLER_PID 2>/dev/null; then \
 		echo "ERROR: Controller process died. See $$LOG_FILE for details"; \
-		docker-compose down; \
+		docker-compose down -v; \
 		exit 1; \
 	fi; \
 	echo "Running chainsaw tests..."; \
@@ -135,7 +137,7 @@ test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel 
 	kill $$KILL_TARGET 2>/dev/null || true; \
 	echo "Controller logs saved at $$LOG_FILE"; \
 	echo "Stopping docker-compose..."; \
-	docker-compose down; \
+	docker-compose down -v; \
 	echo "Cleaning up external CRDs..."; \
 	$(MAKE) uninstall-external-crds; \
 	exit $${TEST_EXIT_CODE:-0}
@@ -283,7 +285,7 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 .PHONY: install-external-crds
 install-external-crds: ## Install external CRDs from milo repository.
 	@echo "Installing MachineAccount CRDs from milo repository..."
-	@kubectl apply -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=main || { \
+	@kubectl apply -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=212-add-the-ability-to-activate-and-deactivate-user-accounts-in-milo || { \
 		echo "ERROR: Failed to install MachineAccount CRDs from milo repository."; \
 		exit 1; \
 	}

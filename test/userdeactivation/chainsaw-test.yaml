@@ -1,0 +1,176 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: userdeactivation-state
+spec:
+  # This test exercises the UserDeactivation controller end-to-end.
+  # 1. Create a human user in cluster and Zitadel.
+  # 2. Create a UserDeactivation object for the human user.
+  # 3. Verify the User status.state becomes Inactive.
+  # 4. Verify the Zitadel user is actually inactive.
+  # 5. Delete the UserDeactivation object.
+  # 6. Verify the User status.state becomes Active.
+  # 7. Verify the Zitadel user is actually active.
+
+  steps:
+  - name: create-human-user-and-verify
+    try:
+      # --- Apply Create human user in cluster ---------------------------------------------
+      - apply:
+          file: resources/user.yaml
+
+      # --- Create human user in Zitadel with same user name ---------------------------------------------
+      - script:
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            echo "Creating (or ensuring) human-user in Zitadel..."
+            # We rely on two env variables that must be provided when running the suite:
+            #   ZITADEL_DOMAIN – the base URL of the Zitadel instance (e.g. http://localhost:8080)
+            #   ZITADEL_TOKEN  – a Management API token with user write permissions
+            : "${ZITADEL_DOMAIN:?ZITADEL_DOMAIN env var must be set}"
+            : "${ZITADEL_TOKEN:?ZITADEL_TOKEN env var must be set}"
+            CURL_DATA='{"userId":"human-user","username":"john.doe@example.com","profile":{"givenName":"John","familyName":"Doe"},"email":{"email":"john.doe@example.com","isVerified":true}}'
+            # Try to create the user. Ignore errors if it already exists.
+            curl --silent --show-error --fail --location "${ZITADEL_DOMAIN}/v2/users/human" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json" \
+              -H "Authorization: Bearer ${ZITADEL_TOKEN}" \
+              --data-raw "$CURL_DATA" || echo "User may already exist – continuing"
+
+      # --- Verify the Zitadel user is Active -----------------------------------
+      - script:
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            : "${ZITADEL_DOMAIN:?ZITADEL_DOMAIN env var must be set}"
+            : "${ZITADEL_TOKEN:?ZITADEL_TOKEN env var must be set}"
+            USER_STATE=$(curl -s -L "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}" | jq -r '.user.state')
+            echo "Zitadel state for human-user: $USER_STATE"
+            if [[ "$USER_STATE" != "USER_STATE_ACTIVE" ]]; then
+              echo "ERROR: expected USER_STATE_ACTIVE but got $USER_STATE" >&2
+              exit 1
+            fi
+
+  - name: create-userdeactivation-and-verify-inactive-user
+    try:
+      # --- Apply UserDeactivation object ---------------------------------------------
+      - apply:
+          file: resources/userdeactivation.yaml
+
+      # --- Verify the User status.state becomes Inactive ---------------------------------------------
+      - assert:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: User
+            metadata:
+              name: human-user
+            status:
+              state: Inactive
+
+      # --- Verify the Zitadel user is inactive -----------------------------------
+      - script:
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            : "${ZITADEL_DOMAIN:?ZITADEL_DOMAIN env var must be set}"
+            : "${ZITADEL_TOKEN:?ZITADEL_TOKEN env var must be set}"
+            USER_STATE=$(curl -s -L "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}" | jq -r '.user.state')
+            echo "Zitadel state for human-user: $USER_STATE"
+            if [[ "$USER_STATE" != "USER_STATE_INACTIVE" ]]; then
+              echo "ERROR: expected USER_STATE_INACTIVE but got $USER_STATE" >&2
+              exit 1
+            fi
+
+  - name: delete-userdeactivation-and-verify-active-user
+    try:
+      # --- DeleteUserDeactivation object ---------------------------------------------
+      - delete:
+          file: resources/userdeactivation.yaml
+
+      # --- Verify the User status.state becomes Active ---------------------------------------------
+      - assert:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: User
+            metadata:
+              name: human-user
+            status:
+              state: Active
+
+      # --- Verify the Zitadel user is active -----------------------------------
+      - script:
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            : "${ZITADEL_DOMAIN:?ZITADEL_DOMAIN env var must be set}"
+            : "${ZITADEL_TOKEN:?ZITADEL_TOKEN env var must be set}"
+            USER_STATE=$(curl -s -L "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}" | jq -r '.user.state')
+            echo "Zitadel state for human-user: $USER_STATE"
+            if [[ "$USER_STATE" != "USER_STATE_ACTIVE" ]]; then
+              echo "ERROR: expected USER_STATE_ACTIVE but got $USER_STATE" >&2
+              exit 1
+            fi
+
+  # --- Repeat a cycle of deactivation and reactivation ---------------------------------------------
+  - name: create-userdeactivation-and-verify-inactive-user
+    try:
+      # --- Apply UserDeactivation object ---------------------------------------------
+      - apply:
+          file: resources/userdeactivation.yaml
+
+      # --- Verify the User status.state becomes Inactive ---------------------------------------------
+      - assert:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: User
+            metadata:
+              name: human-user
+            status:
+              state: Inactive
+
+      # --- Verify the Zitadel user is inactive -----------------------------------
+      - script:
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            : "${ZITADEL_DOMAIN:?ZITADEL_DOMAIN env var must be set}"
+            : "${ZITADEL_TOKEN:?ZITADEL_TOKEN env var must be set}"
+            USER_STATE=$(curl -s -L "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}" | jq -r '.user.state')
+            echo "Zitadel state for human-user: $USER_STATE"
+            if [[ "$USER_STATE" != "USER_STATE_INACTIVE" ]]; then
+              echo "ERROR: expected USER_STATE_INACTIVE but got $USER_STATE" >&2
+              exit 1
+            fi
+
+  - name: delete-userdeactivation-and-verify-active-user
+    try:
+      # --- Apply UserDeactivation object ---------------------------------------------
+      - delete:
+          file: resources/userdeactivation.yaml
+
+      # --- Verify the User status.state becomes Active ---------------------------------------------
+      - assert:
+          resource:
+            apiVersion: iam.miloapis.com/v1alpha1
+            kind: User
+            metadata:
+              name: human-user
+            status:
+              state: Active
+
+      # --- Verify the Zitadel user is active -----------------------------------
+      - script:
+          content: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+            : "${ZITADEL_DOMAIN:?ZITADEL_DOMAIN env var must be set}"
+            : "${ZITADEL_TOKEN:?ZITADEL_TOKEN env var must be set}"
+            USER_STATE=$(curl -s -L "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}" | jq -r '.user.state')
+            echo "Zitadel state for human-user: $USER_STATE"
+            if [[ "$USER_STATE" != "USER_STATE_ACTIVE" ]]; then
+              echo "ERROR: expected USER_STATE_ACTIVE but got $USER_STATE" >&2
+              exit 1
+            fi
+
+  

@@ -20,6 +20,9 @@ rules:
   - iam.miloapis.com
   resources:
   - machineaccounts/finalizers
+  - userdeactivations/finalizers
+  - userdeactivations/status
+  - users/status
   verbs:
   - update
 - apiGroups:
@@ -30,6 +33,21 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - userdeactivations
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - users
+  verbs:
+  - get
 - apiGroups:
   - infrastructure.miloapis.com
   resources:
