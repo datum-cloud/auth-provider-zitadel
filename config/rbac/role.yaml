@@ -8,7 +8,6 @@ rules:
   - iam.miloapis.com
   resources:
   - machineaccounts
-  - userdeactivations
   verbs:
   - create
   - delete
@@ -22,17 +21,33 @@ rules:
   resources:
   - machineaccounts/finalizers
   - userdeactivations/finalizers
+  - userdeactivations/status
+  - users/status
   verbs:
   - update
 - apiGroups:
   - iam.miloapis.com
   resources:
   - machineaccounts/status
-  - userdeactivations/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - userdeactivations
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - users
+  verbs:
+  - get
 - apiGroups:
   - infrastructure.miloapis.com
   resources:

@@ -101,9 +101,11 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 	return finalizer.Result{}, nil
 }
 
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations/status,verbs=update
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations/finalizers,verbs=update
+// +kubebuilder:rbac:groups=iam.miloapis.com,resources=users,verbs=get
+// +kubebuilder:rbac:groups=iam.miloapis.com,resources=users/status,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
