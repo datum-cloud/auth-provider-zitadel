@@ -86,8 +86,8 @@ test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel 
 	@start_time=$$(date +%s); \
 	while ! curl -f http://localhost:8080/debug/ready >/dev/null 2>&1; do \
 		duration=$$(( $$(date +%s) - $$start_time )); \
-		if [ $$duration -ge 60 ]; then \
-			echo "Zitadel failed to start within 60 seconds"; \
+		if [ $$duration -ge 600 ]; then \
+			echo "Zitadel failed to start within 600 seconds"; \
 			docker-compose logs; \
 			docker-compose down -v; \
 			exit 1; \
