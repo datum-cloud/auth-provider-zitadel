@@ -28,3 +28,5 @@ go.work
 
 zitadel-admin-sa.json
 controller.log
+
+certs/

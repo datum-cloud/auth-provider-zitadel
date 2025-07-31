@@ -1,0 +1,33 @@
+version: '3'
+
+vars:
+  CERTS_DIR: "certs"
+  ZITADEL_PRIVATE_KEY: "certs/331320460987858948.json"
+  ZITADEL_DOMAIN: "http://localhost:8080"
+  
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  generate-webhookserver-certs:
+    desc: Generate all certificates for webhook server
+    cmds:
+      - mkdir -p "{{.CERTS_DIR}}" && openssl req -x509 -nodes -newkey rsa:4096 -keyout "{{.CERTS_DIR}}/server.key" -out "{{.CERTS_DIR}}/server.crt" -days 1024 -subj "/CN=webhook.zitadel.svc" -sha256
+
+  run-webhookserver:
+    desc: Run the user authentication webhook server locally
+    deps:
+      - generate-webhookserver-certs
+    cmds:
+      - |
+          go run cmd/main.go user-authentication-webhook \
+            --addr :8443 \
+            --tls-cert-file "{{.CERTS_DIR}}/server.crt" \
+            --tls-private-key-file "{{.CERTS_DIR}}/server.key" \
+            --insecure=false \
+            --zitadel-private-key "{{.ZITADEL_PRIVATE_KEY}}" \
+            --zitadel-domain "{{.ZITADEL_DOMAIN}}"
+
+  
