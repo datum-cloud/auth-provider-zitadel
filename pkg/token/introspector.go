@@ -104,7 +104,11 @@ func (i *Introspector) Introspect(ctx context.Context, token string) (map[string
 		log.Error(err, "Introspection HTTP request failed")
 		return nil, fmt.Errorf("introspection request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error(closeErr, "Failed to close response body")
+		}
+	}()
 
 	log.V(1).Info("Received introspection response", "status_code", resp.StatusCode)
 
