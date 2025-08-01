@@ -20,6 +20,9 @@ import (
 	privatekey "go.miloapis.com/auth-provider-zitadel/pkg/private-key"
 )
 
+// Function to retrieve current time, overridden in tests.
+var nowFunc = time.Now
+
 // Introspector performs OAuth2 token introspection against a Zitadel instance.
 type Introspector struct {
 	privateKey      *rsa.PrivateKey
@@ -162,7 +165,7 @@ func (i *Introspector) createClientAssertion() (string, error) {
 func (i *Introspector) getCachedAssertion() (string, bool) {
 	log := logf.Log.WithName("token-introspector").WithValues("client_id", i.clientID)
 
-	now := time.Now()
+	now := nowFunc()
 
 	// Fast path: Check cache with read lock (allows concurrent reads)
 	i.mu.RLock()
@@ -186,7 +189,7 @@ func (i *Introspector) createAndCacheAssertion() (string, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	now := time.Now()
+	now := nowFunc()
 
 	// Double-check pattern: another goroutine might have updated cache while we waited for write lock
 	if i.cachedAssertion != "" && now.Add(5*time.Minute).Before(i.assertionExpiresAt) {
@@ -199,7 +202,7 @@ func (i *Introspector) createAndCacheAssertion() (string, error) {
 	// Create and sign new JWT
 	signedToken, expiresAt, err := i.buildSignedJWT(now)
 	if err != nil {
-		return "", fmt.Errorf("Error when building signed JWT: %w", err)
+		return "", fmt.Errorf("error when building signed JWT: %w", err)
 	}
 
 	// Cache the new assertion
