@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
+	"sync"
 
 	"fmt"
 	"io"
@@ -27,6 +28,11 @@ type Introspector struct {
 	introspectionURL string
 	domain           string
 	jwtExpiration    time.Duration
+
+	// JWT caching fields
+	mu                 sync.RWMutex
+	cachedAssertion    string
+	assertionExpiresAt time.Time
 }
 
 // NewIntrospector constructs a new Introspector from the given Zitadel JSON Key,
@@ -140,29 +146,113 @@ func (i *Introspector) Introspect(ctx context.Context, token string) (map[string
 }
 
 // createClientAssertion builds the JWT used as client_assertion for token introspection.
+// It uses caching to avoid expensive JWT signing operations when the cached token is still valid.
 func (i *Introspector) createClientAssertion() (string, error) {
+	// Try to get from cache first (fast path)
+	if cachedToken, found := i.getCachedAssertion(); found {
+		return cachedToken, nil
+	}
+
+	// Cache miss or expired - create new JWT (slow path)
+	return i.createAndCacheAssertion()
+}
+
+// getCachedAssertion attempts to retrieve a valid cached JWT using read locks for optimal concurrency.
+// Returns the cached token and true if valid, empty string and false otherwise.
+func (i *Introspector) getCachedAssertion() (string, bool) {
 	log := logf.Log.WithName("token-introspector").WithValues("client_id", i.clientID)
 
-	log.V(1).Info("Creating client assertion JWT", "key_id", i.keyID, "audience", i.domain)
+	now := time.Now()
+
+	// Fast path: Check cache with read lock (allows concurrent reads)
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.cachedAssertion != "" && now.Add(5*time.Minute).Before(i.assertionExpiresAt) {
+		log.V(1).Info("Using cached client assertion JWT", "expires_at", i.assertionExpiresAt)
+		return i.cachedAssertion, true
+	}
+
+	log.V(1).Info("Cache miss or expired", "has_cached", i.cachedAssertion != "", "expires_at", i.assertionExpiresAt)
+	return "", false
+}
+
+// createAndCacheAssertion creates a new JWT and caches it using write locks.
+// Implements double-check pattern to avoid duplicate JWT creation.
+func (i *Introspector) createAndCacheAssertion() (string, error) {
+	log := logf.Log.WithName("token-introspector").WithValues("client_id", i.clientID)
+
+	// Acquire write lock for cache update
+	i.mu.Lock()
+	defer i.mu.Unlock()
 
 	now := time.Now()
+
+	// Double-check pattern: another goroutine might have updated cache while we waited for write lock
+	if i.cachedAssertion != "" && now.Add(5*time.Minute).Before(i.assertionExpiresAt) {
+		log.V(1).Info("Using cached client assertion JWT (double-check)", "expires_at", i.assertionExpiresAt)
+		return i.cachedAssertion, nil
+	}
+
+	log.V(1).Info("Creating new client assertion JWT", "key_id", i.keyID, "audience", i.domain)
+
+	// Create and sign new JWT
+	signedToken, expiresAt, err := i.buildSignedJWT(now)
+	if err != nil {
+		return "", fmt.Errorf("Error when building signed JWT: %w", err)
+	}
+
+	// Cache the new assertion
+	i.cachedAssertion = signedToken
+	i.assertionExpiresAt = expiresAt
+
+	log.V(1).Info("Successfully created and cached new client assertion JWT", "expires_at", expiresAt)
+	return signedToken, nil
+}
+
+// buildSignedJWT creates and signs a new JWT token with the given issued time.
+// This function contains the pure JWT creation logic without caching concerns.
+func (i *Introspector) buildSignedJWT(issuedAt time.Time) (signedToken string, expiresAt time.Time, err error) {
+	log := logf.Log.WithName("token-introspector").WithValues("client_id", i.clientID)
+
+	expiresAt = issuedAt.Add(i.jwtExpiration)
+
 	claims := jwt.MapClaims{
 		"iss": i.clientID,
 		"sub": i.clientID,
 		"aud": i.domain,
-		"exp": now.Add(i.jwtExpiration).Unix(),
-		"iat": now.Unix(),
+		"exp": expiresAt.Unix(),
+		"iat": issuedAt.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = i.keyID
 
-	signedToken, err := token.SignedString(i.privateKey)
+	signedToken, err = token.SignedString(i.privateKey)
 	if err != nil {
 		log.Error(err, "Failed to sign client assertion JWT")
-		return "", err
+		return "", time.Time{}, fmt.Errorf("failed to sign client assertion JWT: %w", err)
 	}
 
-	log.V(1).Info("Successfully created and signed client assertion JWT")
-	return signedToken, nil
+	log.V(1).Info("Successfully signed JWT", "expires_at", expiresAt)
+	return signedToken, expiresAt, nil
+}
+
+// GetCachedAssertionForTesting returns the cached assertion for testing purposes.
+// This method should only be used in tests.
+func (i *Introspector) GetCachedAssertionForTesting() (assertion string, expiresAt time.Time, cached bool) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.cachedAssertion == "" {
+		return "", time.Time{}, false
+	}
+
+	return i.cachedAssertion, i.assertionExpiresAt, true
+}
+
+// CreateClientAssertionForTesting exposes createClientAssertion for testing.
+// This method should only be used in tests.
+func (i *Introspector) CreateClientAssertionForTesting() (string, error) {
+	return i.createClientAssertion()
 }
