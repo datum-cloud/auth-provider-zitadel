@@ -26,14 +26,20 @@ type Introspector struct {
 
 	introspectionURL string
 	domain           string
+	jwtExpiration    time.Duration
 }
 
-// NewIntrospector constructs a new Introspector from the given Zitadel JSON Key
-// and Zitadel base domain, e.g. "https://auth.example.com".
-func NewIntrospector(privateKeyPath, domain string) (*Introspector, error) {
+// NewIntrospector constructs a new Introspector from the given Zitadel JSON Key,
+// Zitadel base domain, e.g. "https://auth.example.com", and JWT expiration duration.
+func NewIntrospector(privateKeyPath, domain string, jwtExpiration time.Duration) (*Introspector, error) {
 	log := logf.Log.WithName("token-introspector")
 
-	log.Info("Creating new token introspector", "private_key_path", privateKeyPath, "domain", domain)
+	log.Info("Creating new token introspector", "private_key_path", privateKeyPath, "domain", domain, "jwt_expiration", jwtExpiration)
+
+	if jwtExpiration <= 0 {
+		log.Error(fmt.Errorf("invalid duration"), "JWT expiration duration must be positive", "duration", jwtExpiration)
+		return nil, fmt.Errorf("JWT expiration duration must be positive, got %v", jwtExpiration)
+	}
 
 	privKey, clientID, keyID, err := privatekey.LoadZitadelPrivateKey(privateKeyPath)
 	if err != nil {
@@ -60,7 +66,8 @@ func NewIntrospector(privateKeyPath, domain string) (*Introspector, error) {
 	log.Info("Successfully created token introspector",
 		"client_id", clientID,
 		"key_id", keyID,
-		"introspection_url", introspectionURL)
+		"introspection_url", introspectionURL,
+		"jwt_expiration", jwtExpiration)
 
 	return &Introspector{
 		privateKey:       privKey,
@@ -68,6 +75,7 @@ func NewIntrospector(privateKeyPath, domain string) (*Introspector, error) {
 		keyID:            keyID,
 		introspectionURL: introspectionURL,
 		domain:           domain,
+		jwtExpiration:    jwtExpiration,
 	}, nil
 }
 
@@ -137,12 +145,13 @@ func (i *Introspector) createClientAssertion() (string, error) {
 
 	log.V(1).Info("Creating client assertion JWT", "key_id", i.keyID, "audience", i.domain)
 
+	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss": i.clientID,
 		"sub": i.clientID,
 		"aud": i.domain,
-		"exp": time.Now().Add(1 * time.Hour).Unix(),
-		"iat": time.Now().Unix(),
+		"exp": now.Add(i.jwtExpiration).Unix(),
+		"iat": now.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

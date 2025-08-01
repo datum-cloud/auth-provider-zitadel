@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 
@@ -86,7 +87,7 @@ func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]
 
 	// Build an introspector that talks to our fake server.
 	credsPath := generateCredentialsFile(t)
-	introspector, err := token.NewIntrospector(credsPath, introspectionSrv.URL)
+	introspector, err := token.NewIntrospector(credsPath, introspectionSrv.URL, time.Hour)
 	if err != nil {
 		t.Fatalf("create introspector: %v", err)
 	}

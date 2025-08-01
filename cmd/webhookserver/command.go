@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/spf13/cobra"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -28,6 +29,7 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 
 		zitadelPrivateKey string
 		zitadelDomain     string
+		jwtExpiration     time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -40,9 +42,10 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 				"addr", addr,
 				"domain", zitadelDomain,
 				"private_key_path", zitadelPrivateKey,
+				"jwt_expiration", jwtExpiration,
 				"tls_enabled", certFile != "" && keyFile != "")
 
-			introspector, err := token.NewIntrospector(zitadelPrivateKey, zitadelDomain)
+			introspector, err := token.NewIntrospector(zitadelPrivateKey, zitadelDomain, jwtExpiration)
 			if err != nil {
 				log.Error(err, "Failed to create auth provider introspector")
 				return fmt.Errorf("failed to create auth provider introspector: %w", err)
@@ -105,6 +108,7 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 	// Zitadel introspection flags.
 	cmd.Flags().StringVar(&zitadelPrivateKey, "zitadel-private-key", "private-key.json", "path to Zitadel private key JSON")
 	cmd.Flags().StringVar(&zitadelDomain, "zitadel-domain", "https://your_domain", "base URL of the Auth Provider instance (e.g., https://auth.example.com)")
+	cmd.Flags().DurationVar(&jwtExpiration, "jwt-expiration", time.Hour, "JWT token expiration duration (e.g., 1h, 30m, 2h30m)")
 
 	return cmd
 }
