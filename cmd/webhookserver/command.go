@@ -33,7 +33,7 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 	)
 
 	cmd := &cobra.Command{
-		Use:   "user-authentication-webhook",
+		Use:   "auth-webhook",
 		Short: "Runs the User Authentication TokenReview webhook server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log := logf.Log.WithName("authentication-webhook")

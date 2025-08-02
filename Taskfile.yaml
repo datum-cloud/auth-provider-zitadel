@@ -22,7 +22,7 @@ tasks:
       - generate-webhookserver-certs
     cmds:
       - |
-          go run cmd/main.go user-authentication-webhook \
+          go run cmd/main.go auth-webhook \
             --addr :8443 \
             --tls-cert-file "{{.CERTS_DIR}}/server.crt" \
             --tls-private-key-file "{{.CERTS_DIR}}/server.key" \
