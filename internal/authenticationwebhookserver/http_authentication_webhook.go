@@ -56,13 +56,22 @@ func HttpTokenAuthenticationWebhook(introspector *token.Introspector) http.Handl
 			ObjectMeta: review.ObjectMeta,
 		}
 
+		// Ensure we always write the response exactly once on exit.
+		defer writeJSON(w, &resp)
+
+		// Helper to set a failure on the response and return.
+		fail := func(msg string) {
+			resp.Status = authenticationv1.TokenReviewStatus{
+				Authenticated: false,
+				Error:         msg,
+			}
+		}
+
 		token := strings.TrimSpace(review.Spec.Token)
 		if token == "" {
 			// If the token is empty we cannot authenticate the request.
 			log.Info("Authentication failed: empty token provided")
-			resp.Status.Authenticated = false
-			resp.Status.Error = "empty token provided"
-			writeJSON(w, &resp)
+			fail("empty token provided")
 			return
 		}
 
@@ -72,11 +81,7 @@ func HttpTokenAuthenticationWebhook(introspector *token.Introspector) http.Handl
 		data, err := introspector.Introspect(r.Context(), token)
 		if err != nil {
 			log.Error(err, "Token introspection failed")
-			resp.Status = authenticationv1.TokenReviewStatus{
-				Authenticated: false,
-				Error:         fmt.Sprintf("token introspection failed: %v", err),
-			}
-			writeJSON(w, &resp)
+			fail(fmt.Sprintf("token introspection failed: %v", err))
 			return
 		}
 
@@ -86,22 +91,14 @@ func HttpTokenAuthenticationWebhook(introspector *token.Introspector) http.Handl
 		isJwtTokenActive, ok := data["active"].(bool)
 		if !ok {
 			log.Info("Authentication failed: active claim not found in introspection response")
-			resp.Status = authenticationv1.TokenReviewStatus{
-				Authenticated: false,
-				Error:         "token introspection failed: active claim not found",
-			}
-			writeJSON(w, &resp)
+			fail("token introspection failed: active claim not found")
 			return
 		}
 
 		if !isJwtTokenActive {
 			// Token is valid but *inactive* (revoked or expired).
 			log.Info("Authentication failed: JWT token is not active (revoked or expired)")
-			resp.Status = authenticationv1.TokenReviewStatus{
-				Authenticated: isJwtTokenActive,
-				Error:         "jwt token is not active",
-			}
-			writeJSON(w, &resp)
+			fail("jwt token is not active")
 			return
 		}
 
@@ -118,11 +115,7 @@ func HttpTokenAuthenticationWebhook(introspector *token.Introspector) http.Handl
 		} else {
 			// This scenario should not be possible, but we handle it just in case.
 			log.Info("Authentication failed: neither email nor username present in token claims")
-			resp.Status = authenticationv1.TokenReviewStatus{
-				Authenticated: false,
-				Error:         "token introspection failed: neither email nor username claim found",
-			}
-			writeJSON(w, &resp)
+			fail("token introspection failed: neither email nor username claim found")
 			return
 		}
 
@@ -137,7 +130,6 @@ func HttpTokenAuthenticationWebhook(introspector *token.Introspector) http.Handl
 		}
 
 		log.V(1).Info("Sending successful authentication response", "authenticated", true, "username", sub)
-		writeJSON(w, &resp)
 	})
 }
 
