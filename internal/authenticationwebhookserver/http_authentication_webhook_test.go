@@ -148,13 +148,31 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			expectErrorSubstring: "jwt token is not active",
 		},
 		{
-			name:                 "token active",
+			name:                 "human user token active",
 			method:               http.MethodPost,
 			token:                validToken,
 			introspectionStatus:  http.StatusOK,
-			introspectionPayload: map[string]any{"active": true, "sub": "my-user"},
+			introspectionPayload: map[string]any{"active": true, "sub": "my-user", "email": "user@example.com"},
 			expectHTTPCode:       http.StatusOK,
 			expectAuthenticated:  true,
+		},
+		{
+			name:                 "machine user token active",
+			method:               http.MethodPost,
+			token:                validToken,
+			introspectionStatus:  http.StatusOK,
+			introspectionPayload: map[string]any{"active": true, "sub": "machine-user", "username": "machine-user@example.com"},
+			expectHTTPCode:       http.StatusOK,
+			expectAuthenticated:  true,
+		},
+		{
+			name:                 "missing email or username",
+			method:               http.MethodPost,
+			token:                validToken,
+			introspectionStatus:  http.StatusOK,
+			introspectionPayload: map[string]any{"active": true, "sub": "machine-user"},
+			expectHTTPCode:       http.StatusOK,
+			expectAuthenticated:  false,
 		},
 	}
 
