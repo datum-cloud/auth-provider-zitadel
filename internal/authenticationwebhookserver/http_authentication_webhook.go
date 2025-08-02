@@ -107,12 +107,31 @@ func HttpTokenAuthenticationWebhook(introspector *token.Introspector) http.Handl
 
 		// At this point the token is active – propagate user information.
 		sub, _ := data["sub"].(string)
+		var username string
+
+		// Determine the username. If there is no email address,
+		// we are in presence of a machine account
+		if e, ok := data["email"].(string); ok && e != "" {
+			username = e
+		} else if u, ok := data["username"].(string); ok && u != "" {
+			username = u
+		} else {
+			// This scenario should not be possible, but we handle it just in case.
+			log.Info("Authentication failed: neither email nor username present in token claims")
+			resp.Status = authenticationv1.TokenReviewStatus{
+				Authenticated: false,
+				Error:         "token introspection failed: neither email nor username claim found",
+			}
+			writeJSON(w, &resp)
+			return
+		}
+
 		log.Info("Authentication successful", "user_id", sub)
 
 		resp.Status = authenticationv1.TokenReviewStatus{
 			Authenticated: isJwtTokenActive,
 			User: authenticationv1.UserInfo{
-				Username: sub,
+				Username: username,
 				UID:      sub,
 			},
 		}
