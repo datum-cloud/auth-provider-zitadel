@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"go.miloapis.com/auth-provider-zitadel/pkg/token"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -67,7 +66,7 @@ func HttpTokenAuthenticationWebhook(introspector *token.Introspector) http.Handl
 			}
 		}
 
-		token := strings.TrimSpace(review.Spec.Token)
+		token := review.Spec.Token
 		if token == "" {
 			// If the token is empty we cannot authenticate the request.
 			log.Info("Authentication failed: empty token provided")
