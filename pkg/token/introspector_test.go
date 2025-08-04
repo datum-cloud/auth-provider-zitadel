@@ -84,13 +84,13 @@ func TestIntrospectorCaching(t *testing.T) {
 	}
 
 	// First call should create and cache a new assertion.
-	assertion1, err := intr.CreateClientAssertionForTesting()
+	assertion1, err := intr.createClientAssertion()
 	if err != nil {
 		t.Fatalf("first call failed: %v", err)
 	}
 
 	// Second call immediately afterwards should return the cached value.
-	assertion2, err := intr.CreateClientAssertionForTesting()
+	assertion2, err := intr.createClientAssertion()
 	if err != nil {
 		t.Fatalf("second call failed: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestIntrospectorCaching(t *testing.T) {
 
 	// Advance time by 30 minutes – cache should still be valid.
 	currentTime = currentTime.Add(30 * time.Minute)
-	assertion3, err := intr.CreateClientAssertionForTesting()
+	assertion3, err := intr.createClientAssertion()
 	if err != nil {
 		t.Fatalf("30-minute call failed: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestIntrospectorCaching(t *testing.T) {
 
 	// Advance time to 55 minutes (5 minutes before expiry) – cache is considered expired.
 	currentTime = baseTime.Add(55 * time.Minute)
-	assertion4, err := intr.CreateClientAssertionForTesting()
+	assertion4, err := intr.createClientAssertion()
 	if err != nil {
 		t.Fatalf("55-minute call failed: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestIntrospectorCaching(t *testing.T) {
 	assertionNew := assertion4
 
 	// Subsequent call without advancing time further should reuse the new cache entry.
-	assertion5, err := intr.CreateClientAssertionForTesting()
+	assertion5, err := intr.createClientAssertion()
 	if err != nil {
 		t.Fatalf("post-expiry cached call failed: %v", err)
 	}

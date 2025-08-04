@@ -281,9 +281,3 @@ func (i *Introspector) GetCachedAssertionForTesting() (assertion string, expires
 
 	return i.cachedAssertion, i.assertionExpiresAt, true
 }
-
-// CreateClientAssertionForTesting exposes createClientAssertion for testing.
-// This method should only be used in tests.
-func (i *Introspector) CreateClientAssertionForTesting() (string, error) {
-	return i.createClientAssertion()
-}
