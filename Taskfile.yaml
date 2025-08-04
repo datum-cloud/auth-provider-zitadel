@@ -2,7 +2,7 @@ version: '3'
 
 vars:
   CERTS_DIR: "certs"
-  ZITADEL_PRIVATE_KEY: "certs/331320460987858948.json"
+  ZITADEL_PRIVATE_KEY: "certs/331462024888320002.json"
   ZITADEL_DOMAIN: "http://localhost:8080"
   
 tasks:
@@ -23,11 +23,16 @@ tasks:
     cmds:
       - |
           go run cmd/main.go auth-webhook \
-            --addr :8443 \
-            --tls-cert-file "{{.CERTS_DIR}}/server.crt" \
-            --tls-private-key-file "{{.CERTS_DIR}}/server.key" \
-            --insecure=false \
+            --webhook-port 8443 \
+            --cert-dir "certs" \
+            --cert-file "server.crt" \
+            --key-file "server.key" \
+            --authentication-endpoint "/authenticate" \
             --zitadel-private-key "{{.ZITADEL_PRIVATE_KEY}}" \
-            --zitadel-domain "{{.ZITADEL_DOMAIN}}"
+            --zitadel-domain "{{.ZITADEL_DOMAIN}}" \
+            --jwt-expiration 1h \
+            --metrics-bind-address :8081
+
+          
 
   

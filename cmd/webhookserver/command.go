@@ -2,15 +2,18 @@ package webhookserver
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"net/http"
-	"os"
-	"os/signal"
 	"time"
 
 	"github.com/spf13/cobra"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8sconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	ctrlwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
 	webhook "go.miloapis.com/auth-provider-zitadel/internal/webhook"
@@ -20,95 +23,96 @@ import (
 // NewAuthenticationWebhookServerCommand returns a cobra command that starts the UserDeactivation
 // TokenReview webhook server.
 func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *cobra.Command {
-	var (
-		addr                   string
-		certFile               string
-		keyFile                string
-		insecure               bool
-		authenticationEndpoint string
-
-		zitadelPrivateKey string
-		zitadelDomain     string
-		jwtExpiration     time.Duration
-	)
+	cfg := config.NewWebhookServerConfig()
 
 	cmd := &cobra.Command{
 		Use:   "auth-webhook",
 		Short: "Runs the User Authentication TokenReview webhook server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log := logf.Log.WithName("authentication-webhook")
-
-			log.Info("Starting authentication webhook server",
-				"addr", addr,
-				"domain", zitadelDomain,
-				"private_key_path", zitadelPrivateKey,
-				"jwt_expiration", jwtExpiration,
-				"tls_enabled", certFile != "" && keyFile != "")
-
-			introspector, err := token.NewIntrospector(zitadelPrivateKey, zitadelDomain, jwtExpiration)
-			if err != nil {
-				log.Error(err, "Failed to create auth provider introspector")
-				return fmt.Errorf("failed to create auth provider introspector: %w", err)
-			}
-			log.Info("Successfully created token introspector")
-
-			mux := http.NewServeMux()
-			mux.Handle(authenticationEndpoint, webhook.NewAuthenticationWebhook(introspector))
-
-			srv := &http.Server{
-				Addr:      addr,
-				Handler:   mux,
-				TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-			}
-
-			// Graceful shutdown
-			stop := make(chan os.Signal, 1)
-			signal.Notify(stop, os.Interrupt)
-
-			go func() {
-				<-stop
-				log.Info("Received interrupt signal, shutting down server gracefully")
-				if err := srv.Shutdown(context.Background()); err != nil {
-					log.Error(err, "Error during server shutdown")
-				}
-				log.Info("Server shutdown completed")
-			}()
-
-			if certFile == "" || keyFile == "" {
-				if !insecure {
-					log.Error(fmt.Errorf("missing TLS configuration"), "TLS certificate and key files are required for secure operation")
-					return fmt.Errorf("TLS certificate and key files are required for secure operation. Use --insecure flag only for local development")
-				}
-				// For local development only – run HTTP.
-				log.Info("WARNING: Starting HTTP server without TLS - use only for local testing!", "addr", addr)
-				cmd.PrintErrln("WARNING: running webhook without TLS – use only for local testing!")
-				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					log.Error(err, "HTTP server failed")
-					return err
-				}
-				return nil
-			}
-
-			log.Info("Starting HTTPS server", "addr", addr, "cert_file", certFile, "key_file", keyFile)
-			if err := srv.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-				log.Error(err, "HTTPS server failed")
-				return err
-			}
-			return nil
+			return runWebhookServer(cfg)
 		},
 	}
 
 	// Network & Kubernetes flags.
-	cmd.Flags().StringVar(&addr, "addr", ":8443", "address the server listens on")
-	cmd.Flags().StringVar(&certFile, "tls-cert-file", "", "path to TLS certificate file")
-	cmd.Flags().StringVar(&keyFile, "tls-private-key-file", "", "path to TLS private key file")
-	cmd.Flags().BoolVar(&insecure, "insecure", false, "allow running without TLS (DANGEROUS: for local development only)")
-	cmd.Flags().StringVar(&authenticationEndpoint, "authentication-endpoint", "/authenticate", "path to the authentication endpoint")
+	cmd.Flags().IntVar(&cfg.WebhookPort, "webhook-port", 9443, "Port for the webhook server")
+	cmd.Flags().StringVar(&cfg.CertDir, "cert-dir", "/etc/certs", "Directory that contains the TLS certs to use for serving the webhook")
+	cmd.Flags().StringVar(&cfg.CertFile, "cert-file", "", "Filename in the directory that contains the TLS cert")
+	cmd.Flags().StringVar(&cfg.KeyFile, "key-file", "", "Filename in the directory that contains the TLS private key")
+	cmd.Flags().StringVar(&cfg.AuthenticationEndpoint, "authentication-endpoint", "/authenticate", "path to the authentication endpoint")
 
 	// Zitadel introspection flags.
-	cmd.Flags().StringVar(&zitadelPrivateKey, "zitadel-private-key", "private-key.json", "path to Zitadel private key JSON")
-	cmd.Flags().StringVar(&zitadelDomain, "zitadel-domain", "https://your_domain", "base URL of the Auth Provider instance (e.g., https://auth.example.com)")
-	cmd.Flags().DurationVar(&jwtExpiration, "jwt-expiration", time.Hour, "JWT token expiration duration (e.g., 1h, 30m, 2h30m)")
+	cmd.Flags().StringVar(&cfg.ZitadelPrivateKey, "zitadel-private-key", "private-key.json", "path to Zitadel private key JSON")
+	cmd.Flags().StringVar(&cfg.ZitadelDomain, "zitadel-domain", "https://your_domain", "base URL of the Auth Provider instance (e.g., https://auth.example.com)")
+	cmd.Flags().DurationVar(&cfg.JwtExpiration, "jwt-expiration", time.Hour, "JWT token expiration duration (e.g., 1h, 30m, 2h30m)")
+
+	// Metrics flags.
+	cmd.Flags().StringVar(&cfg.MetricsBindAddress, "metrics-bind-address", ":8080", "address the metrics endpoint binds to")
 
 	return cmd
+}
+
+func runWebhookServer(cfg *config.WebhookServerConfig) error {
+	logf.SetLogger(zap.New(zap.JSONEncoder()))
+	log := logf.Log.WithName("authentication-webhook")
+
+	log.Info("Starting authentication webhook server",
+		"cert_dir", cfg.CertDir,
+		"cert_file", cfg.CertFile,
+		"key_file", cfg.KeyFile,
+		"authentication_endpoint", cfg.AuthenticationEndpoint,
+		"webhook_port", cfg.WebhookPort,
+	)
+
+	log.Info("Creating auth provider introspector",
+		"zitadel-private-key", cfg.ZitadelPrivateKey,
+		"zitadel-domain", cfg.ZitadelDomain,
+		"jwt-expiration", cfg.JwtExpiration,
+	)
+
+	log.Info("Metrics bind address",
+		"metrics-bind-address", cfg.MetricsBindAddress,
+	)
+
+	introspector, err := token.NewIntrospector(cfg.ZitadelPrivateKey, cfg.ZitadelDomain, cfg.JwtExpiration)
+	if err != nil {
+		log.Error(err, "Failed to create auth provider introspector")
+		return fmt.Errorf("failed to create auth provider introspector: %w", err)
+	}
+	log.Info("Successfully created token introspector")
+
+	// Setup Kubernetes client config
+	restConfig, err := k8sconfig.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get rest config: %w", err)
+	}
+
+	runtimeScheme := runtime.NewScheme()
+	if err := authenticationv1.AddToScheme(runtimeScheme); err != nil {
+		return fmt.Errorf("failed to add authenticationv1 scheme: %w", err)
+	}
+
+	log.Info("Creating manager")
+	mgr, err := manager.New(restConfig, manager.Options{
+		Scheme: runtimeScheme,
+		Metrics: server.Options{
+			BindAddress: cfg.MetricsBindAddress,
+		},
+		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
+			CertDir:  cfg.CertDir,
+			CertName: cfg.CertFile,
+			KeyName:  cfg.KeyFile,
+			Port:     cfg.WebhookPort,
+		}),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create manager: %w", err)
+	}
+
+	log.Info("Setting up webhook server")
+	hookServer := mgr.GetWebhookServer()
+
+	hookServer.Register(cfg.AuthenticationEndpoint, webhook.NewAuthenticationWebhook(introspector))
+
+	log.Info("Starting manager")
+	return mgr.Start(context.Background())
 }
