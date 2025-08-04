@@ -46,7 +46,8 @@ func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var review authenticationv1.TokenReview
 	if err := json.NewDecoder(r.Body).Decode(&review); err != nil {
 		log.Error(err, "Failed to decode TokenReview")
-		http.Error(w, fmt.Sprintf("failed to decode TokenReview: %v", err), http.StatusBadRequest)
+		errResponse := Errored(err)
+		wh.writeResponse(w, errResponse)
 		return
 	}
 
