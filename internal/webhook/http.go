@@ -53,9 +53,9 @@ func (wh *Webhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reviewResponse := wh.Handler.Handle(r.Context(), Request{TokenReview: review})
 
 	log.Info("Request processed",
-		"authenticated", reviewResponse.TokenReview.Status.Authenticated,
-		"username", reviewResponse.TokenReview.Status.User.Username,
-		"uid", reviewResponse.TokenReview.Status.User.UID)
+		"authenticated", reviewResponse.Status.Authenticated,
+		"username", reviewResponse.Status.User.Username,
+		"uid", reviewResponse.Status.User.UID)
 
 	wh.writeResponse(w, reviewResponse)
 }
@@ -68,5 +68,5 @@ func (wh *Webhook) writeResponse(w http.ResponseWriter, resp Response) {
 		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
 		return
 	}
-	log.V(1).Info("Response written", "authenticated", resp.TokenReview.Status.Authenticated)
+	log.V(1).Info("Response written", "authenticated", resp.Status.Authenticated)
 }
