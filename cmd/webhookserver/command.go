@@ -1,7 +1,6 @@
 package webhookserver
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -29,7 +28,7 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 		Use:   "auth-webhook",
 		Short: "Runs the User Authentication TokenReview webhook server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWebhookServer(cfg)
+			return runWebhookServer(cmd, cfg)
 		},
 	}
 
@@ -38,7 +37,6 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 	cmd.Flags().StringVar(&cfg.CertDir, "cert-dir", "/etc/certs", "Directory that contains the TLS certs to use for serving the webhook")
 	cmd.Flags().StringVar(&cfg.CertFile, "cert-file", "", "Filename in the directory that contains the TLS cert")
 	cmd.Flags().StringVar(&cfg.KeyFile, "key-file", "", "Filename in the directory that contains the TLS private key")
-	cmd.Flags().StringVar(&cfg.AuthenticationEndpoint, "authentication-endpoint", "/authenticate", "path to the authentication endpoint")
 
 	// Zitadel introspection flags.
 	cmd.Flags().StringVar(&cfg.ZitadelPrivateKey, "zitadel-private-key", "private-key.json", "path to Zitadel private key JSON")
@@ -51,7 +49,7 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 	return cmd
 }
 
-func runWebhookServer(cfg *config.WebhookServerConfig) error {
+func runWebhookServer(cmd *cobra.Command, cfg *config.WebhookServerConfig) error {
 	logf.SetLogger(zap.New(zap.JSONEncoder()))
 	log := logf.Log.WithName("authentication-webhook")
 
@@ -59,7 +57,6 @@ func runWebhookServer(cfg *config.WebhookServerConfig) error {
 		"cert_dir", cfg.CertDir,
 		"cert_file", cfg.CertFile,
 		"key_file", cfg.KeyFile,
-		"authentication_endpoint", cfg.AuthenticationEndpoint,
 		"webhook_port", cfg.WebhookPort,
 	)
 
@@ -111,8 +108,9 @@ func runWebhookServer(cfg *config.WebhookServerConfig) error {
 	log.Info("Setting up webhook server")
 	hookServer := mgr.GetWebhookServer()
 
-	hookServer.Register(cfg.AuthenticationEndpoint, webhook.NewAuthenticationWebhook(introspector))
+	webhookv1 := webhook.NewAuthenticationWebhookV1(introspector)
+	hookServer.Register(webhookv1.Endpoint, webhookv1)
 
 	log.Info("Starting manager")
-	return mgr.Start(context.Background())
+	return mgr.Start(cmd.Context())
 }

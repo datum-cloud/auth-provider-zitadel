@@ -27,7 +27,6 @@ tasks:
             --cert-dir "certs" \
             --cert-file "server.crt" \
             --key-file "server.key" \
-            --authentication-endpoint "/authenticate" \
             --zitadel-private-key "{{.ZITADEL_PRIVATE_KEY}}" \
             --zitadel-domain "{{.ZITADEL_DOMAIN}}" \
             --jwt-expiration 1h \

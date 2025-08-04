@@ -92,7 +92,7 @@ func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]
 		t.Fatalf("create introspector: %v", err)
 	}
 
-	handler := NewAuthenticationWebhook(introspector)
+	handler := NewAuthenticationWebhookV1(introspector)
 	return handler, introspectionSrv
 }
 

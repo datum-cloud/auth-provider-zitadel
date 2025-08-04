@@ -9,10 +9,11 @@ import (
 )
 
 type Webhook struct {
-	Handler Handler
+	Handler  Handler
+	Endpoint string
 }
 
-func NewAuthenticationWebhook(introspector *token.Introspector) *Webhook {
+func NewAuthenticationWebhookV1(introspector *token.Introspector) *Webhook {
 	return &Webhook{
 		Handler: HandlerFunc(func(ctx context.Context, request Request) Response {
 			log := logf.Log.WithName("authentication-webhook").WithValues()
@@ -47,5 +48,6 @@ func NewAuthenticationWebhook(introspector *token.Introspector) *Webhook {
 
 			return Allowed(username, sub)
 		}),
+		Endpoint: "/apis/authentication.k8s.io/v1/tokenreviews",
 	}
 }
