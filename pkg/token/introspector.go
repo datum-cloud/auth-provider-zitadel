@@ -24,6 +24,34 @@ import (
 var nowFunc = time.Now
 
 // Introspector performs OAuth2 token introspection against a Zitadel instance.
+
+// IntrospectionData contains the subset of fields returned by the OAuth2 Token
+// Introspection endpoint that are needed by the authentication webhook.
+// Additional fields can be added as required.
+type IntrospectionData struct {
+	Active   bool   `json:"active"`
+	Sub      string `json:"sub,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Username string `json:"username,omitempty"`
+}
+
+// EffectiveUsername determines the most appropriate username to use from the
+// introspection data.
+// Priority order:
+//  1. Email, if present and non-empty (human user)
+//  2. Username claim, if present (machine service account)
+//
+// Returns an error if neither field is populated.
+func (d *IntrospectionData) EffectiveUsername() (string, error) {
+	if d.Email != "" {
+		return d.Email, nil
+	}
+	if d.Username != "" {
+		return d.Username, nil
+	}
+	return "", fmt.Errorf("neither email nor username claim found")
+}
+
 type Introspector struct {
 	privateKey      *rsa.PrivateKey
 	clientID, keyID string
@@ -89,7 +117,7 @@ func NewIntrospector(privateKeyPath, domain string, jwtExpiration time.Duration)
 }
 
 // Introspect performs the token introspection call and returns the decoded JSON body.
-func (i *Introspector) Introspect(ctx context.Context, token string) (map[string]interface{}, error) {
+func (i *Introspector) Introspect(ctx context.Context, token string) (*IntrospectionData, error) {
 	log := logf.Log.WithName("token-introspector").WithValues("client_id", i.clientID)
 
 	log.V(1).Info("Starting token introspection", "url", i.introspectionURL)
@@ -138,14 +166,14 @@ func (i *Introspector) Introspect(ctx context.Context, token string) (map[string
 		return nil, fmt.Errorf("introspection failed: %s - %s", resp.Status, string(body))
 	}
 
-	var data map[string]interface{}
+	var data IntrospectionData
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		log.Error(err, "Failed to decode introspection response")
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	log.V(1).Info("Successfully decoded introspection response", "active", data["active"])
-	return data, nil
+	log.V(1).Info("Successfully decoded introspection response", "active", data.Active)
+	return &data, nil
 }
 
 // createClientAssertion builds the JWT used as client_assertion for token introspection.

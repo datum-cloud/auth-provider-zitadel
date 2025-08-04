@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	authenticationwebhookserver "go.miloapis.com/auth-provider-zitadel/internal/authenticationwebhookserver"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
+	webhook "go.miloapis.com/auth-provider-zitadel/internal/webhook"
 	token "go.miloapis.com/auth-provider-zitadel/pkg/token"
 )
 
@@ -53,7 +53,7 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 			log.Info("Successfully created token introspector")
 
 			mux := http.NewServeMux()
-			mux.Handle(authenticationEndpoint, authenticationwebhookserver.HttpTokenAuthenticationWebhook(introspector))
+			mux.Handle(authenticationEndpoint, webhook.NewAuthenticationWebhook(introspector))
 
 			srv := &http.Server{
 				Addr:      addr,
