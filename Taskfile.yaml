@@ -22,7 +22,7 @@ tasks:
       - generate-webhookserver-certs
     cmds:
       - |
-          go run cmd/main.go auth-webhook \
+          go run cmd/main.go authn-webhook \
             --webhook-port 8443 \
             --cert-dir "certs" \
             --cert-file "server.crt" \
