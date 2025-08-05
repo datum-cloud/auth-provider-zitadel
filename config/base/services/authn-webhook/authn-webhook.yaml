@@ -76,6 +76,6 @@ spec:
               cpu: 10m
               memory: 64Mi
 
-      serviceAccountName: false
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 10
       volumes: []
