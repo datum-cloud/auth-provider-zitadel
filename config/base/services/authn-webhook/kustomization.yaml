@@ -4,6 +4,5 @@ resources:
 - authn-webhook.yaml
 - authn-webhook-service.yaml
 images:
-- name: auth-provider-zitadel
-  newName: auth-provider-zitadel
-  newTag: dev
+- name: ghcr.io/datum-cloud/auth-provider-zitadel
+  newTag: latest

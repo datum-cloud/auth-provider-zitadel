@@ -26,20 +26,35 @@ spec:
           type: RuntimeDefault
       containers:
         - name: authn-webhook
-          image: auth-provider-zitadel:latest
+          image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
           imagePullPolicy: IfNotPresent
           args:
             - authn-webhook
-            - --webhook-port=8090
-            - --cert-dir=certs
-            - --cert-file=tls.crt
-            - --key-file=tls.key
+            - --webhook-port=$(WEBHOOK_PORT)
+            - --cert-dir=$(CERT_DIR)
+            - --cert-file=$(CERT_FILE)
+            - --key-file=$(KEY_FILE)
             - --zitadel-domain=$(ZITADEL_DOMAIN)
-            - --jwt-expiration=1h
-            - --metrics-bind-address=:8443
+            - --zitadel-private-key=$(ZITADEL_PRIVATE_KEY_FILE_PATH)
+            - --jwt-expiration=$(JWT_EXPIRATION)
+            - --metrics-bind-address=$(METRICS_BIND_ADDRESS)
           env:
+            - name: WEBHOOK_PORT
+              value: "8090"
+            - name: CERT_DIR
+              value: certs
+            - name: CERT_FILE
+              value: tls.crt
+            - name: KEY_FILE
+              value: tls.key
             - name: ZITADEL_DOMAIN
               value: https://auth.datum.net
+            - name: ZITADEL_PRIVATE_KEY_FILE_PATH
+              value: https://auth.datum.net
+            - name: JWT_EXPIRATION
+              value: "1h"
+            - name: METRICS_BIND_ADDRESS
+              value: ":8443"
           ports:
             - containerPort: 8443
               name: metrics
@@ -61,6 +76,6 @@ spec:
               cpu: 10m
               memory: 64Mi
 
-      serviceAccountName: controller-manager
+      serviceAccountName: false
       terminationGracePeriodSeconds: 10
       volumes: []
