@@ -50,7 +50,7 @@ spec:
             - name: ZITADEL_DOMAIN
               value: https://auth.datum.net
             - name: ZITADEL_PRIVATE_KEY_FILE_PATH
-              value: https://auth.datum.net
+              value: /etc/zitadel/auth/machine-account-key.json
             - name: JWT_EXPIRATION
               value: "1h"
             - name: METRICS_BIND_ADDRESS
