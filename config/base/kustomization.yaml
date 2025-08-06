@@ -7,9 +7,6 @@ kind: Kustomization
 # Common namespace for all application resources
 namespace: auth-provider-zitadel-system
 
-# Common name prefix for all resources
-namePrefix: auth-provider-zitadel-
-
 resources:
   - rbac
   - services/controller-manager
