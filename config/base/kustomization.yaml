@@ -11,4 +11,6 @@ namespace: auth-provider-zitadel-system
 namePrefix: auth-provider-zitadel-
 
 resources:
+  - rbac
+  - services/controller-manager
   - services/authn-webhook
