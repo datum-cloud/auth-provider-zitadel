@@ -28,6 +28,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"github.com/zitadel/oidc/v3/pkg/client/profile"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
@@ -357,14 +358,30 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		}
 	}
 
+	// Create main multicluster manager with leader election
 	mgr, err := mcmanager.New(upstreamClusterConfig, provider, mgrOptions)
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "unable to start multicluster manager")
 		os.Exit(1)
 	}
 
+	// Create core control plane manager with shared metrics and no leader
+	// election.
+	coreControlPlaneMgr, err := ctrl.NewManager(coreControlPlaneConfig, ctrl.Options{
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			// Disable separate metrics endpoint. The controller runtime library uses
+			// a global metrics registry so all metrics will be available in the multi
+			// cluster runtime manager's metrics endpoint.
+			BindAddress: "0",
+		},
+		HealthProbeBindAddress: "0",
+		// This controller manager will rely on the leadership election of
+		// the multi cluster manager to determine if this controller should start.
+		LeaderElection: false,
+	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "unable to create core control plane manager")
 		os.Exit(1)
 	}
 
@@ -381,21 +398,30 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	}
 	zitadelHtppClient := zitadelHtppClient.NewClientWithTokenSource(cfg.Zitadel.BaseURL, tokenSource)
 
+	// Setup MachineAccountController on multicluster manager (for project control planes)
 	if err = (&controller.MachineAccountController{
 		Zitadel:            zitadelHtppClient,
 		EmailAddressSuffix: cfg.EmailAddressSuffix,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "MachinaAccount")
+		setupLog.Error(err, "unable to create controller", "controller", "MachineAccount")
 		os.Exit(1)
 	}
 
+	// Setup UserDeactivationController on core control plane manager
 	if err = (&controller.UserDeactivationController{
-		Client:  coreControlPlaneCluster.GetClient(),
+		Client:  coreControlPlaneMgr.GetClient(),
 		Zitadel: zitadelHtppClient,
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(coreControlPlaneMgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UserDeactivation")
 		os.Exit(1)
 	}
+
+	// Add core control plane manager as a runnable that starts only when main manager is leader
+	mgr.Add(&coreControlPlaneRunnable{
+		mgr:                 mgr,
+		coreControlPlaneMgr: coreControlPlaneMgr,
+		setupLog:            setupLog,
+	})
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
@@ -436,6 +462,24 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 type runnableProvider interface {
 	multicluster.Provider
 	Run(context.Context, mcmanager.Manager) error
+}
+
+// coreControlPlaneRunnable implements multicluster-runtime Runnable interface
+type coreControlPlaneRunnable struct {
+	mgr                 mcmanager.Manager
+	coreControlPlaneMgr manager.Manager
+	setupLog            logr.Logger
+}
+
+func (r *coreControlPlaneRunnable) Start(ctx context.Context) error {
+	<-r.mgr.Elected() // Wait for main manager to become leader
+	r.setupLog.Info("Main manager elected leader, starting core control plane manager")
+	return r.coreControlPlaneMgr.Start(ctx)
+}
+
+func (r *coreControlPlaneRunnable) Engage(ctx context.Context, clusterName string, cluster cluster.Cluster) error {
+	// No-op: this runnable doesn't manage clusters
+	return nil
 }
 
 // Needed until we contribute the patch in the following PR again (need to sign CLA):
