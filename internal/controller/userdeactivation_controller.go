@@ -171,14 +171,17 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req reconcil
 	// The deactivation decision is based on the user's current state rather than other UserDeactivation objects
 	// to ensure deactivation occurs even if the user was accidentally reactivated through manual intervention.
 	if user.Status.State != inactiveUserState {
-		log.Info("Deactivating User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
+		log.Info("Deactivating User", "userRef", userDeactivation.Spec.UserRef)
 		if shouldDeactivateUser {
 			err = r.Zitadel.DeactivateUser(ctx, user.GetName())
 			if err != nil {
 				log.Error(err, "Failed to deactivate User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
 				return ctrl.Result{}, fmt.Errorf("failed to deactivate User in Zitadel: %w", err)
 			}
+		} else {
+			log.Info("Skipping deactivation in Zitadel, user is already deactivated in Zitadel", "userRef", userDeactivation.Spec.UserRef)
 		}
+		log.Info("Updating User status to Inactive", "userRef", userDeactivation.Spec.UserRef)
 		user.Status.State = inactiveUserState
 		err = r.Client.Status().Update(ctx, user)
 		if err != nil {
