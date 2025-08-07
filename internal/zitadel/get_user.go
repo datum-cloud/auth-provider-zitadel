@@ -14,6 +14,14 @@ type GetUserResponse struct {
 	User    User        `json:"user"`
 }
 
+// UserState represents the state of a user returned by Zitadel’s API.
+type UserState string
+
+const (
+	UserStateActive   UserState = "USER_STATE_ACTIVE"
+	UserStateInactive UserState = "USER_STATE_INACTIVE"
+)
+
 // UserDetails contains metadata about the user resource.
 type UserDetails struct {
 	Sequence      string `json:"sequence"`
@@ -26,7 +34,7 @@ type UserDetails struct {
 type User struct {
 	UserID             string           `json:"userId"`
 	Details            UserDetails      `json:"details"`
-	State              string           `json:"state"`
+	State              UserState        `json:"state"`
 	Username           string           `json:"username"`
 	LoginNames         []string         `json:"loginNames"`
 	PreferredLoginName string           `json:"preferredLoginName"`

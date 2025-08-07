@@ -158,15 +158,26 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req reconcil
 		return ctrl.Result{}, fmt.Errorf("failed to get User resource: %w", err)
 	}
 
+	// Check if the user should be deactivated in Zitadel. This prevents the scenario
+	// where the user is deactivated again in Zitadel if user.Status.States was not
+	// successfully updated.
+	shouldDeactivateUser, err := r.shouldDeactivateUser(ctx, user)
+	if err != nil {
+		log.Error(err, "Failed to check if user should be deactivated", "userRef", userDeactivation.Spec.UserRef)
+		return ctrl.Result{}, fmt.Errorf("failed to check if user should be deactivated: %w", err)
+	}
+
 	// Deactivate the user in Zitadel
 	// The deactivation decision is based on the user's current state rather than other UserDeactivation objects
 	// to ensure deactivation occurs even if the user was accidentally reactivated through manual intervention.
 	if user.Status.State != inactiveUserState {
 		log.Info("Deactivating User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
-		err = r.Zitadel.DeactivateUser(ctx, user.GetName())
-		if err != nil {
-			log.Error(err, "Failed to deactivate User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
-			return ctrl.Result{}, fmt.Errorf("failed to deactivate User in Zitadel: %w", err)
+		if shouldDeactivateUser {
+			err = r.Zitadel.DeactivateUser(ctx, user.GetName())
+			if err != nil {
+				log.Error(err, "Failed to deactivate User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
+				return ctrl.Result{}, fmt.Errorf("failed to deactivate User in Zitadel: %w", err)
+			}
 		}
 		user.Status.State = inactiveUserState
 		err = r.Client.Status().Update(ctx, user)
@@ -220,4 +231,19 @@ func (r *UserDeactivationController) SetupWithManager(mgr manager.Manager) error
 		For(&iammiloapiscomv1alpha1.UserDeactivation{}).
 		Named("userdeactivation").
 		Complete(r)
+}
+
+// shouldDeactivateUser checks if the user should be deactivated on Zitadel
+func (r *UserDeactivationController) shouldDeactivateUser(ctx context.Context, user *iammiloapiscomv1alpha1.User) (bool, error) {
+	// Only check if the user status is active
+	if user.Status.State != inactiveUserState {
+		zitadelUser, err := r.Zitadel.GetUser(ctx, user.GetName())
+		if err != nil {
+			// User is warranty to exist in Zitadel, otherwise the UserDeactivation object should not be created
+			return false, fmt.Errorf("failed to get User from Zitadel: %w", err)
+		}
+		return zitadelUser.User.State == zitadel.UserStateActive, nil
+	}
+
+	return false, nil
 }
