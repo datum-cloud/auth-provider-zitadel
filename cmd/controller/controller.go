@@ -417,11 +417,14 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	}
 
 	// Add core control plane manager as a runnable that starts only when main manager is leader
-	mgr.Add(&coreControlPlaneRunnable{
+	if err := mgr.Add(&coreControlPlaneRunnable{
 		mgr:                 mgr,
 		coreControlPlaneMgr: coreControlPlaneMgr,
 		setupLog:            setupLog,
-	})
+	}); err != nil {
+		setupLog.Error(err, "unable to set up core control plane manager")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
