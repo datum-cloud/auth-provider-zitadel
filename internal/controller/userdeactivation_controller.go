@@ -29,9 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/finalizer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
-	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
-	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"go.miloapis.com/auth-provider-zitadel/internal/zitadel"
 )
@@ -116,7 +115,7 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
-func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
+func (r *UserDeactivationController) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithName("userdeactivation-reconciler")
 	log.Info("Starting reconciliation", "request", req)
 
@@ -208,7 +207,7 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconc
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *UserDeactivationController) SetupWithManager(mgr mcmanager.Manager) error {
+func (r *UserDeactivationController) SetupWithManager(mgr manager.Manager) error {
 	r.Finalizers = finalizer.NewFinalizers()
 	if err := r.Finalizers.Register(userDeactivationFinalizerKey, &userDeactivationFinalizer{
 		Client:  r.Client,
@@ -217,7 +216,7 @@ func (r *UserDeactivationController) SetupWithManager(mgr mcmanager.Manager) err
 		return fmt.Errorf("failed to register group finalizer: %w", err)
 	}
 
-	return mcbuilder.ControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&iammiloapiscomv1alpha1.UserDeactivation{}).
 		Named("userdeactivation").
 		Complete(r)
