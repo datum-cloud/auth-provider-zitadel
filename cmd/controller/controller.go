@@ -108,6 +108,7 @@ and manages the auth provider lifecycle.`,
 	// Config flags
 	cmd.Flags().BoolVar(&cfg.EnableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	cmd.Flags().StringVar(&cfg.UpstreamClusterKubeconfig, "upstream-kubeconfig", "", "Path to the kubeconfig file for the upstream cluster. If empty, uses the default kubeconfig.")
+	cmd.Flags().StringVar(&cfg.CoreControlPlaneKubeconfig, "core-control-plane-kubeconfig", "", "Path to the kubeconfig file for the core control plane cluster. If empty, uses the default kubeconfig.")
 	cmd.Flags().StringVar(&cfg.ServerConfigFile, "server-config", "", "path to the server config file")
 	cmd.Flags().StringVar(&cfg.EmailAddressSuffix, "email-address-suffix", "iam.miloapis.com", "The suffix of the email address for the machine account.")
 	cmd.Flags().StringVar(&cfg.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
