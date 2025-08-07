@@ -88,6 +88,11 @@ type ControllerConfig struct {
 	ServerConfigFile          string
 	EmailAddressSuffix        string
 
+	// The kubeconfig file that is used to connect and authenticate with the core
+	// control plane to reconcile core Milo resources. Defaults to the in-cluster
+	// kubeconfig when an empty value is provided.
+	CoreControlPlaneKubeconfig string
+
 	// Zitadel connection details
 	Zitadel ZitadelConfig
 }
@@ -145,6 +150,14 @@ func (c *DownstreamResourceManagementConfig) RestConfig() (*rest.Config, error) 
 	}
 
 	return clientcmd.BuildConfigFromFlags("", c.KubeconfigPath)
+}
+
+func (c *ControllerConfig) CoreControlPlaneRestConfig() (*rest.Config, error) {
+	if c.CoreControlPlaneKubeconfig == "" {
+		return ctrl.GetConfig()
+	}
+
+	return clientcmd.BuildConfigFromFlags("", c.CoreControlPlaneKubeconfig)
 }
 
 // +k8s:deepcopy-gen=true

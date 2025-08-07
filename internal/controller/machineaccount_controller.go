@@ -44,14 +44,13 @@ const (
 
 // MachineAccountReconciler reconciles a MachineAccount object
 type MachineAccountController struct {
-	Client             client.Client
 	Finalizers         finalizer.Finalizers
 	Zitadel            *zitadel.Client
 	EmailAddressSuffix string
+	mgr                mcmanager.Manager
 }
 
 type machineAccountFinalizer struct {
-	Client  client.Client
 	Zitadel *zitadel.Client
 }
 
@@ -107,8 +106,13 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	log := logf.FromContext(ctx).WithName("machineaccount-reconciler")
 	log.Info("Starting reconciliation", "request", req)
 
+	cluster, err := r.mgr.ClusterFromContext(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster from reconcile context: %w", err)
+	}
+
 	machineAccount := &iammiloapiscomv1alpha1.MachineAccount{}
-	err := r.Client.Get(ctx, req.NamespacedName, machineAccount)
+	err = cluster.GetClient().Get(ctx, req.NamespacedName, machineAccount)
 	if errors.IsNotFound(err) {
 		log.Info("MachineAccount resource not found")
 		return ctrl.Result{}, nil
@@ -127,7 +131,7 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	}
 	if finalizeResult.Updated {
 		log.Info("Finalizer updated the machineAccount object, updating API server")
-		if updateErr := r.Client.Update(ctx, machineAccount); updateErr != nil {
+		if updateErr := cluster.GetClient().Update(ctx, machineAccount); updateErr != nil {
 			log.Error(updateErr, "Failed to update MachineAccount after finalizer update")
 			return ctrl.Result{}, updateErr
 		}
@@ -180,7 +184,7 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 		LastTransitionTime: metav1.Now(),
 	}
 	meta.SetStatusCondition(&machineAccount.Status.Conditions, machineAccountCondition)
-	if err := r.Client.Status().Update(ctx, machineAccount); err != nil {
+	if err := cluster.GetClient().Status().Update(ctx, machineAccount); err != nil {
 		log.Error(err, "Failed to update MachineAccount status")
 		return ctrl.Result{}, fmt.Errorf("failed to update MachineAccount status: %w", err)
 	}
@@ -230,8 +234,9 @@ func (r *MachineAccountController) updateMachineAccountState(ctx context.Context
 // SetupWithManager sets up the controller with the Manager.
 func (r *MachineAccountController) SetupWithManager(mgr mcmanager.Manager) error {
 	r.Finalizers = finalizer.NewFinalizers()
+	r.mgr = mgr
+
 	if err := r.Finalizers.Register(machineAccountFinalizerKey, &machineAccountFinalizer{
-		Client:  r.Client,
 		Zitadel: r.Zitadel,
 	}); err != nil {
 		return fmt.Errorf("failed to register group finalizer: %w", err)
