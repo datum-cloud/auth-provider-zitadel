@@ -285,21 +285,37 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		}
 	}
 
-	downstreamClusterConfig := ctrl.GetConfigOrDie()
+	deploymentClusterConfig := ctrl.GetConfigOrDie()
 
-	downstreamCluster, err := cluster.New(downstreamClusterConfig, func(o *cluster.Options) {
+	deploymentCluster, err := cluster.New(deploymentClusterConfig, func(o *cluster.Options) {
 		o.Scheme = scheme
 	})
 	if err != nil {
-		setupLog.Error(err, "failed to construct downstream luster")
+		setupLog.Error(err, "failed to construct downstream cluster")
 		os.Exit(1)
 	}
 
-	runnables, provider, err := initializeClusterDiscovery(serverConfig, downstreamCluster, scheme)
+	runnables, provider, err := initializeClusterDiscovery(serverConfig, deploymentCluster, scheme)
 	if err != nil {
 		setupLog.Error(err, "unable to initialize cluster discovery")
 		os.Exit(1)
 	}
+
+	coreControlPlaneConfig, err := cfg.CoreControlPlaneRestConfig()
+	if err != nil {
+		setupLog.Error(err, "failed to construct core control plane cluster config")
+		os.Exit(1)
+	}
+
+	coreControlPlaneCluster, err := cluster.New(coreControlPlaneConfig, func(o *cluster.Options) {
+		o.Scheme = scheme
+	})
+	if err != nil {
+		setupLog.Error(err, "failed to construct core control plane cluster")
+		os.Exit(1)
+	}
+
+	runnables = append(runnables, coreControlPlaneCluster)
 
 	mgrOptions := ctrl.Options{
 		Scheme:                 scheme,
@@ -365,7 +381,6 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	zitadelHtppClient := zitadelHtppClient.NewClientWithTokenSource(cfg.Zitadel.BaseURL, tokenSource)
 
 	if err = (&controller.MachineAccountController{
-		Client:             downstreamCluster.GetClient(),
 		Zitadel:            zitadelHtppClient,
 		EmailAddressSuffix: cfg.EmailAddressSuffix,
 	}).SetupWithManager(mgr); err != nil {
@@ -374,7 +389,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	}
 
 	if err = (&controller.UserDeactivationController{
-		Client:  downstreamCluster.GetClient(),
+		Client:  coreControlPlaneCluster.GetClient(),
 		Zitadel: zitadelHtppClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UserDeactivation")
