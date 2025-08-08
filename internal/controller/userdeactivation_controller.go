@@ -85,14 +85,6 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 			return finalizer.Result{}, fmt.Errorf("failed to reactivate user in Zitadel: %w", err)
 		}
 		log.Info("Successfully reactivated user in Zitadel", "userRef", userRef)
-
-		user.Status.State = activeUserState
-		err = f.Client.Status().Update(ctx, user)
-		if err != nil {
-			log.Error(err, "Failed to update User status", "userRef", userRef)
-			return finalizer.Result{}, fmt.Errorf("failed to update User status: %w", err)
-		}
-		log.Info("Successfully updated User status to Active", "userRef", userRef)
 	} else {
 		log.Info("Skipping reactivation, user is already active", "userRef", userRef)
 	}
@@ -104,7 +96,6 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations/status,verbs=update
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=users,verbs=get
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=users/status,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -180,13 +171,6 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req reconcil
 			}
 		} else {
 			log.Info("Skipping deactivation in Zitadel, user is already deactivated in Zitadel", "userRef", userDeactivation.Spec.UserRef)
-		}
-		log.Info("Updating User status to Inactive", "userRef", userDeactivation.Spec.UserRef)
-		user.Status.State = inactiveUserState
-		err = r.Client.Status().Update(ctx, user)
-		if err != nil {
-			log.Error(err, "Failed to update User status", "userRef", userDeactivation.Spec.UserRef)
-			return ctrl.Result{}, fmt.Errorf("failed to update User status: %w", err)
 		}
 	} else {
 		log.Info("User is already deactivated", "userRef", userDeactivation.Spec.UserRef)
