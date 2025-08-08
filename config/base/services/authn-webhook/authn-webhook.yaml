@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authn-webhook
+  labels:
+    app.kubernetes.io/name: authn-webhook
+    app.kubernetes.io/part-of: auth-provider-zitadel
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authn-webhook
+      app.kubernetes.io/part-of: auth-provider-zitadel
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: authn-webhook
+        app.kubernetes.io/part-of: auth-provider-zitadel
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: authn-webhook
+          image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - authn-webhook
+            - --webhook-port=$(WEBHOOK_PORT)
+            - --cert-dir=$(CERT_DIR)
+            - --cert-file=$(CERT_FILE)
+            - --key-file=$(KEY_FILE)
+            - --zitadel-domain=$(ZITADEL_DOMAIN)
+            - --zitadel-private-key=$(ZITADEL_PRIVATE_KEY_FILE_PATH)
+            - --jwt-expiration=$(JWT_EXPIRATION)
+            - --metrics-bind-address=$(METRICS_BIND_ADDRESS)
+          env:
+            - name: WEBHOOK_PORT
+              value: "8090"
+            - name: CERT_DIR
+              value: certs
+            - name: CERT_FILE
+              value: tls.crt
+            - name: KEY_FILE
+              value: tls.key
+            - name: ZITADEL_DOMAIN
+              value: https://auth.datum.net
+            - name: ZITADEL_PRIVATE_KEY_FILE_PATH
+              value: /etc/zitadel/auth/machine-account-key.json
+            - name: JWT_EXPIRATION
+              value: "1h"
+            - name: METRICS_BIND_ADDRESS
+              value: ":8443"
+          ports:
+            - containerPort: 8443
+              name: metrics
+              protocol: TCP
+            - containerPort: 8090
+              name: webhook
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+          volumeMounts: []
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 10
+      volumes: []

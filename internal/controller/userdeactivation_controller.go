@@ -29,18 +29,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/finalizer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
-	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
-	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"go.miloapis.com/auth-provider-zitadel/internal/zitadel"
 )
 
 const (
-	userDeactivationFinalizerKey   = "iam.miloapis.com/userdeactivation"
-	userDeactivationReadyCondition = "Ready"
-	inactiveUserState              = "Inactive"
-	activeUserState                = "Active"
+	userDeactivationFinalizerKey = "iam.miloapis.com/userdeactivation"
 )
 
 type UserDeactivationController struct {
@@ -78,7 +74,7 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 	}
 
 	// Webhook at Milo warranty that only one UserDeactivation object exists for a user
-	if user.Status.State == inactiveUserState {
+	if user.Status.State == iammiloapiscomv1alpha1.UserStateInactive {
 		log.Info("Reactivating user", "userRef", userRef)
 		err = f.Zitadel.ReactivateUser(ctx, userRef)
 		if err != nil {
@@ -86,14 +82,6 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 			return finalizer.Result{}, fmt.Errorf("failed to reactivate user in Zitadel: %w", err)
 		}
 		log.Info("Successfully reactivated user in Zitadel", "userRef", userRef)
-
-		user.Status.State = activeUserState
-		err = f.Client.Status().Update(ctx, user)
-		if err != nil {
-			log.Error(err, "Failed to update User status", "userRef", userRef)
-			return finalizer.Result{}, fmt.Errorf("failed to update User status: %w", err)
-		}
-		log.Info("Successfully updated User status to Active", "userRef", userRef)
 	} else {
 		log.Info("Skipping reactivation, user is already active", "userRef", userRef)
 	}
@@ -105,7 +93,6 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations/status,verbs=update
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=userdeactivations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=users,verbs=get
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=users/status,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -116,7 +103,7 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
-func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
+func (r *UserDeactivationController) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithName("userdeactivation-reconciler")
 	log.Info("Starting reconciliation", "request", req)
 
@@ -159,21 +146,28 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconc
 		return ctrl.Result{}, fmt.Errorf("failed to get User resource: %w", err)
 	}
 
+	// Check if the user should be deactivated in Zitadel. This prevents the scenario
+	// where the user is deactivated again in Zitadel if user.Status.States was not
+	// successfully updated.
+	shouldDeactivateUser, err := r.shouldDeactivateUser(ctx, user)
+	if err != nil {
+		log.Error(err, "Failed to check if user should be deactivated", "userRef", userDeactivation.Spec.UserRef)
+		return ctrl.Result{}, fmt.Errorf("failed to check if user should be deactivated: %w", err)
+	}
+
 	// Deactivate the user in Zitadel
 	// The deactivation decision is based on the user's current state rather than other UserDeactivation objects
 	// to ensure deactivation occurs even if the user was accidentally reactivated through manual intervention.
-	if user.Status.State != inactiveUserState {
-		log.Info("Deactivating User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
-		err = r.Zitadel.DeactivateUser(ctx, user.GetName())
-		if err != nil {
-			log.Error(err, "Failed to deactivate User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
-			return ctrl.Result{}, fmt.Errorf("failed to deactivate User in Zitadel: %w", err)
-		}
-		user.Status.State = inactiveUserState
-		err = r.Client.Status().Update(ctx, user)
-		if err != nil {
-			log.Error(err, "Failed to update User status", "userRef", userDeactivation.Spec.UserRef)
-			return ctrl.Result{}, fmt.Errorf("failed to update User status: %w", err)
+	if user.Status.State != iammiloapiscomv1alpha1.UserStateInactive {
+		log.Info("Deactivating User", "userRef", userDeactivation.Spec.UserRef)
+		if shouldDeactivateUser {
+			err = r.Zitadel.DeactivateUser(ctx, user.GetName())
+			if err != nil {
+				log.Error(err, "Failed to deactivate User in Zitadel", "userRef", userDeactivation.Spec.UserRef)
+				return ctrl.Result{}, fmt.Errorf("failed to deactivate User in Zitadel: %w", err)
+			}
+		} else {
+			log.Info("Skipping deactivation in Zitadel, user is already deactivated in Zitadel", "userRef", userDeactivation.Spec.UserRef)
 		}
 	} else {
 		log.Info("User is already deactivated", "userRef", userDeactivation.Spec.UserRef)
@@ -184,7 +178,7 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconc
 
 	// Build the Ready condition and update it on the UserDeactivation resource
 	userDeactivationCondition := metav1.Condition{
-		Type:               userDeactivationReadyCondition,
+		Type:               iammiloapiscomv1alpha1.UserDeactivationReadyCondition,
 		Status:             metav1.ConditionTrue,
 		Reason:             "Reconciled",
 		Message:            "UserDeactivation successfully reconciled",
@@ -208,7 +202,7 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req mcreconc
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *UserDeactivationController) SetupWithManager(mgr mcmanager.Manager) error {
+func (r *UserDeactivationController) SetupWithManager(mgr manager.Manager) error {
 	r.Finalizers = finalizer.NewFinalizers()
 	if err := r.Finalizers.Register(userDeactivationFinalizerKey, &userDeactivationFinalizer{
 		Client:  r.Client,
@@ -217,8 +211,23 @@ func (r *UserDeactivationController) SetupWithManager(mgr mcmanager.Manager) err
 		return fmt.Errorf("failed to register group finalizer: %w", err)
 	}
 
-	return mcbuilder.ControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&iammiloapiscomv1alpha1.UserDeactivation{}).
 		Named("userdeactivation").
 		Complete(r)
+}
+
+// shouldDeactivateUser checks if the user should be deactivated on Zitadel
+func (r *UserDeactivationController) shouldDeactivateUser(ctx context.Context, user *iammiloapiscomv1alpha1.User) (bool, error) {
+	// Only check if the user status is active
+	if user.Status.State != iammiloapiscomv1alpha1.UserStateInactive {
+		zitadelUser, err := r.Zitadel.GetUser(ctx, user.GetName())
+		if err != nil {
+			// User is warranty to exist in Zitadel, otherwise the UserDeactivation object should not be created
+			return false, fmt.Errorf("failed to get User from Zitadel: %w", err)
+		}
+		return zitadelUser.User.State == zitadel.UserStateActive, nil
+	}
+
+	return false, nil
 }

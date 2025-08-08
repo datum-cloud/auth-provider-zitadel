@@ -81,6 +81,8 @@ spec:
           - --zitadel-machine-account-key-path=$(ZITADEL_MACHINE_ACCOUNT_KEY_PATH)
           # Controller manager configuration
           - --server-config=$(ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH)
+          # Configure which kubeconfig to use for the core control plane.
+          - --core-control-plane-kubeconfig=$(CORE_CONTROL_PLANE_KUBECONFIG_PATH)
         image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
         name: controller-manager
         env:
@@ -121,6 +123,9 @@ spec:
         # Controller manager configuration environment variables
         - name: ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH
           value: "/etc/zitadel/controller-manager-config.yaml"
+        # Defaults to using the in-cluster kubeconfig.
+        - name: CORE_CONTROL_PLANE_KUBECONFIG_PATH
+          value: ""
         ports:
         - containerPort: 8081
           name: health

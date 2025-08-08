@@ -22,6 +22,7 @@ rules:
   - machineaccounts/finalizers
   - userdeactivations/finalizers
   - userdeactivations/status
+  - users/status
   verbs:
   - update
 - apiGroups:

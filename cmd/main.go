@@ -9,6 +9,7 @@ import (
 	"go.miloapis.com/auth-provider-zitadel/cmd/actionsserver"
 	"go.miloapis.com/auth-provider-zitadel/cmd/controller"
 	"go.miloapis.com/auth-provider-zitadel/cmd/version"
+	"go.miloapis.com/auth-provider-zitadel/cmd/webhookserver"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
 )
 
@@ -47,6 +48,7 @@ func execute() error {
 	rootCmd.AddCommand(controller.NewControllerCommand(globalConfig))
 	rootCmd.AddCommand(version.NewVersionCommand())
 	rootCmd.AddCommand(actionsserver.NewActionsServerCommand(globalConfig))
+	rootCmd.AddCommand(webhookserver.NewAuthenticationWebhookServerCommand(globalConfig))
 
 	return rootCmd.Execute()
 }
