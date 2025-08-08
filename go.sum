@@ -164,6 +164,8 @@ github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a h1:ajVsfF
 github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a/go.mod h1:Hhy9uy3M02js4KINATr9sPtXoP/vkiWvLQF6OIG5Imc=
 go.miloapis.com/milo v0.1.2-0.20250808201817-0d4fd393cc1b h1:Hd+gdHuduBSWZbiLcb3d0CPSO5eUUk96s3sL1JowiRE=
 go.miloapis.com/milo v0.1.2-0.20250808201817-0d4fd393cc1b/go.mod h1:X+DpWOchv/Vm63mwHnboW00KRGsODY2bUTS/bBbK1+E=
+go.miloapis.com/milo v0.2.0 h1:Aq8BqEoF+scrw+wE+Fo9Xx5vgZ0Eo4Q0SluO5+IU0HI=
+go.miloapis.com/milo v0.2.0/go.mod h1:X+DpWOchv/Vm63mwHnboW00KRGsODY2bUTS/bBbK1+E=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 h1:F7Jx+6hwnZ41NSFTO5q4LYDtJRXBf2PD0rNBkeB/lus=

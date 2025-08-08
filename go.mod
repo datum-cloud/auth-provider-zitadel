@@ -8,7 +8,7 @@ require (
 	github.com/onsi/gomega v1.37.0
 	github.com/spf13/cobra v1.9.1
 	github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a
-	go.miloapis.com/milo v0.1.2-0.20250808201817-0d4fd393cc1b
+	go.miloapis.com/milo v0.2.0
 	go.uber.org/zap v1.27.0
 	k8s.io/apimachinery v0.33.3
 	k8s.io/client-go v0.33.2
