@@ -1,0 +1,57 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - machineaccounts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - machineaccounts/finalizers
+  - userdeactivations/finalizers
+  - userdeactivations/status
+  verbs:
+  - update
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - machineaccounts/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - userdeactivations
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - users
+  verbs:
+  - get
+- apiGroups:
+  - infrastructure.miloapis.com
+  resources:
+  - projectcontrolplanes
+  verbs:
+  - get
+  - list
+  - watch
