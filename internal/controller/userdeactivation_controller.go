@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	userDeactivationFinalizerKey   = "iam.miloapis.com/userdeactivation"
+	userDeactivationFinalizerKey = "iam.miloapis.com/userdeactivation"
 )
 
 type UserDeactivationController struct {
