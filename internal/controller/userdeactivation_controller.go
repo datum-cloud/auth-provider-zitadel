@@ -36,10 +36,7 @@ import (
 )
 
 const (
-	userDeactivationFinalizerKey   = "iam.miloapis.com/userdeactivation"
-	userDeactivationReadyCondition = "Ready"
-	inactiveUserState              = "Inactive"
-	activeUserState                = "Active"
+	userDeactivationFinalizerKey = "iam.miloapis.com/userdeactivation"
 )
 
 type UserDeactivationController struct {
@@ -77,7 +74,7 @@ func (f *userDeactivationFinalizer) Finalize(ctx context.Context, obj client.Obj
 	}
 
 	// Webhook at Milo warranty that only one UserDeactivation object exists for a user
-	if user.Status.State == inactiveUserState {
+	if user.Status.State == iammiloapiscomv1alpha1.UserStateInactive {
 		log.Info("Reactivating user", "userRef", userRef)
 		err = f.Zitadel.ReactivateUser(ctx, userRef)
 		if err != nil {
@@ -161,7 +158,7 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req reconcil
 	// Deactivate the user in Zitadel
 	// The deactivation decision is based on the user's current state rather than other UserDeactivation objects
 	// to ensure deactivation occurs even if the user was accidentally reactivated through manual intervention.
-	if user.Status.State != inactiveUserState {
+	if user.Status.State != iammiloapiscomv1alpha1.UserStateInactive {
 		log.Info("Deactivating User", "userRef", userDeactivation.Spec.UserRef)
 		if shouldDeactivateUser {
 			err = r.Zitadel.DeactivateUser(ctx, user.GetName())
@@ -181,7 +178,7 @@ func (r *UserDeactivationController) Reconcile(ctx context.Context, req reconcil
 
 	// Build the Ready condition and update it on the UserDeactivation resource
 	userDeactivationCondition := metav1.Condition{
-		Type:               userDeactivationReadyCondition,
+		Type:               iammiloapiscomv1alpha1.UserDeactivationReadyCondition,
 		Status:             metav1.ConditionTrue,
 		Reason:             "Reconciled",
 		Message:            "UserDeactivation successfully reconciled",
@@ -223,7 +220,7 @@ func (r *UserDeactivationController) SetupWithManager(mgr manager.Manager) error
 // shouldDeactivateUser checks if the user should be deactivated on Zitadel
 func (r *UserDeactivationController) shouldDeactivateUser(ctx context.Context, user *iammiloapiscomv1alpha1.User) (bool, error) {
 	// Only check if the user status is active
-	if user.Status.State != inactiveUserState {
+	if user.Status.State != iammiloapiscomv1alpha1.UserStateInactive {
 		zitadelUser, err := r.Zitadel.GetUser(ctx, user.GetName())
 		if err != nil {
 			// User is warranty to exist in Zitadel, otherwise the UserDeactivation object should not be created
