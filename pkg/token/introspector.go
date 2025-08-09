@@ -59,7 +59,7 @@ type Introspector struct {
 	introspectionURL string
 	domain           string
 	jwtExpiration    time.Duration
-	cacheLeeway      time.Duration
+	jwtRefreshBefore time.Duration
 
 	// JWT caching fields
 	mu                 sync.RWMutex
@@ -69,21 +69,21 @@ type Introspector struct {
 
 // NewIntrospector constructs a new Introspector from the given Zitadel JSON Key,
 // Zitadel base domain, e.g. "https://auth.example.com", JWT expiration duration,
-// and a cache leeway duration which determines how long before JWT expiry the
+// and a "jwt refesh before" duration which determines how long before JWT expiry the
 // cached assertion is considered invalid.
-func NewIntrospector(privateKeyPath, domain string, jwtExpiration, cacheLeeway time.Duration) (*Introspector, error) {
+func NewIntrospector(privateKeyPath, domain string, jwtExpiration, jwtRefreshBefore time.Duration) (*Introspector, error) {
 	log := logf.Log.WithName("token-introspector")
 
-	log.Info("Creating new token introspector", "private_key_path", privateKeyPath, "domain", domain, "jwt_expiration", jwtExpiration, "cache_leeway", cacheLeeway)
+	log.Info("Creating new token introspector", "private_key_path", privateKeyPath, "domain", domain, "jwt_expiration", jwtExpiration, "jwt_refresh_before", jwtRefreshBefore)
 
 	if jwtExpiration <= 0 {
 		log.Error(fmt.Errorf("invalid duration"), "JWT expiration duration must be positive", "duration", jwtExpiration)
 		return nil, fmt.Errorf("JWT expiration duration must be positive, got %v", jwtExpiration)
 	}
 
-	if cacheLeeway < 0 {
-		log.Error(fmt.Errorf("invalid duration"), "Cache leeway must be >= 0", "cache_leeway", cacheLeeway)
-		return nil, fmt.Errorf("cache leeway must be >= 0, got %v", cacheLeeway)
+	if jwtRefreshBefore < 0 {
+		log.Error(fmt.Errorf("invalid duration"), "jwt_refresh_before must be >= 0", "jwt_refresh_before", jwtRefreshBefore)
+		return nil, fmt.Errorf("jwt_refresh_before must be >= 0, got %v", jwtRefreshBefore)
 	}
 
 	privKey, clientID, keyID, err := privatekey.LoadZitadelPrivateKey(privateKeyPath)
@@ -108,11 +108,11 @@ func NewIntrospector(privateKeyPath, domain string, jwtExpiration, cacheLeeway t
 	// Build full introspection endpoint URL.
 	introspectionURL := fmt.Sprintf("%s/oauth/v2/introspect", strings.TrimRight(domain, "/"))
 
-	if jwtExpiration <= cacheLeeway {
+	if jwtExpiration <= jwtRefreshBefore {
 		// Caching will be ineffective since the leeway eclipses the token lifetime.
 		log.Info("JWT expiration is less than or equal to cache leeway; caching will be ineffective and the assertion will be re-signed on each call.",
 			"jwt_expiration", jwtExpiration,
-			"cache_leeway", cacheLeeway)
+			"jwt_refresh_before", jwtRefreshBefore)
 	}
 
 	log.Info("Successfully created token introspector",
@@ -120,7 +120,7 @@ func NewIntrospector(privateKeyPath, domain string, jwtExpiration, cacheLeeway t
 		"key_id", keyID,
 		"introspection_url", introspectionURL,
 		"jwt_expiration", jwtExpiration,
-		"cache_leeway", cacheLeeway)
+		"jwt_refresh_before", jwtRefreshBefore)
 
 	return &Introspector{
 		privateKey:       privKey,
@@ -129,7 +129,7 @@ func NewIntrospector(privateKeyPath, domain string, jwtExpiration, cacheLeeway t
 		introspectionURL: introspectionURL,
 		domain:           domain,
 		jwtExpiration:    jwtExpiration,
-		cacheLeeway:      cacheLeeway,
+		jwtRefreshBefore: jwtRefreshBefore,
 	}, nil
 }
 
@@ -216,7 +216,7 @@ func (i *Introspector) getCachedAssertion() (string, bool) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	if i.cachedAssertion != "" && now.Add(i.cacheLeeway).Before(i.assertionExpiresAt) {
+	if i.cachedAssertion != "" && now.Add(i.jwtRefreshBefore).Before(i.assertionExpiresAt) {
 		log.V(1).Info("Using cached client assertion JWT", "expires_at", i.assertionExpiresAt)
 		return i.cachedAssertion, true
 	}
@@ -237,7 +237,7 @@ func (i *Introspector) createAndCacheAssertion() (string, error) {
 	now := nowFunc()
 
 	// Double-check pattern: another goroutine might have updated cache while we waited for write lock
-	if i.cachedAssertion != "" && now.Add(i.cacheLeeway).Before(i.assertionExpiresAt) {
+	if i.cachedAssertion != "" && now.Add(i.jwtRefreshBefore).Before(i.assertionExpiresAt) {
 		log.V(1).Info("Using cached client assertion JWT (double-check)", "expires_at", i.assertionExpiresAt)
 		return i.cachedAssertion, nil
 	}
