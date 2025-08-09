@@ -59,6 +59,7 @@ type Introspector struct {
 	introspectionURL string
 	domain           string
 	jwtExpiration    time.Duration
+	jwtRefreshBefore time.Duration
 
 	// JWT caching fields
 	mu                 sync.RWMutex
@@ -67,15 +68,22 @@ type Introspector struct {
 }
 
 // NewIntrospector constructs a new Introspector from the given Zitadel JSON Key,
-// Zitadel base domain, e.g. "https://auth.example.com", and JWT expiration duration.
-func NewIntrospector(privateKeyPath, domain string, jwtExpiration time.Duration) (*Introspector, error) {
+// Zitadel base domain, e.g. "https://auth.example.com", JWT expiration duration,
+// and a "jwt refesh before" duration which determines how long before JWT expiry the
+// cached assertion is considered invalid.
+func NewIntrospector(privateKeyPath, domain string, jwtExpiration, jwtRefreshBefore time.Duration) (*Introspector, error) {
 	log := logf.Log.WithName("token-introspector")
 
-	log.Info("Creating new token introspector", "private_key_path", privateKeyPath, "domain", domain, "jwt_expiration", jwtExpiration)
+	log.Info("Creating new token introspector", "private_key_path", privateKeyPath, "domain", domain, "jwt_expiration", jwtExpiration, "jwt_refresh_before", jwtRefreshBefore)
 
 	if jwtExpiration <= 0 {
 		log.Error(fmt.Errorf("invalid duration"), "JWT expiration duration must be positive", "duration", jwtExpiration)
 		return nil, fmt.Errorf("JWT expiration duration must be positive, got %v", jwtExpiration)
+	}
+
+	if jwtRefreshBefore < 0 {
+		log.Error(fmt.Errorf("invalid duration"), "jwt_refresh_before must be >= 0", "jwt_refresh_before", jwtRefreshBefore)
+		return nil, fmt.Errorf("jwt_refresh_before must be >= 0, got %v", jwtRefreshBefore)
 	}
 
 	privKey, clientID, keyID, err := privatekey.LoadZitadelPrivateKey(privateKeyPath)
@@ -100,11 +108,19 @@ func NewIntrospector(privateKeyPath, domain string, jwtExpiration time.Duration)
 	// Build full introspection endpoint URL.
 	introspectionURL := fmt.Sprintf("%s/oauth/v2/introspect", strings.TrimRight(domain, "/"))
 
+	if jwtExpiration <= jwtRefreshBefore {
+		// Caching will be ineffective since the leeway eclipses the token lifetime.
+		log.Info("JWT expiration is less than or equal to cache leeway; caching will be ineffective and the assertion will be re-signed on each call.",
+			"jwt_expiration", jwtExpiration,
+			"jwt_refresh_before", jwtRefreshBefore)
+	}
+
 	log.Info("Successfully created token introspector",
 		"client_id", clientID,
 		"key_id", keyID,
 		"introspection_url", introspectionURL,
-		"jwt_expiration", jwtExpiration)
+		"jwt_expiration", jwtExpiration,
+		"jwt_refresh_before", jwtRefreshBefore)
 
 	return &Introspector{
 		privateKey:       privKey,
@@ -113,6 +129,7 @@ func NewIntrospector(privateKeyPath, domain string, jwtExpiration time.Duration)
 		introspectionURL: introspectionURL,
 		domain:           domain,
 		jwtExpiration:    jwtExpiration,
+		jwtRefreshBefore: jwtRefreshBefore,
 	}, nil
 }
 
@@ -199,7 +216,7 @@ func (i *Introspector) getCachedAssertion() (string, bool) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	if i.cachedAssertion != "" && now.Add(5*time.Minute).Before(i.assertionExpiresAt) {
+	if i.cachedAssertion != "" && now.Add(i.jwtRefreshBefore).Before(i.assertionExpiresAt) {
 		log.V(1).Info("Using cached client assertion JWT", "expires_at", i.assertionExpiresAt)
 		return i.cachedAssertion, true
 	}
@@ -220,7 +237,7 @@ func (i *Introspector) createAndCacheAssertion() (string, error) {
 	now := nowFunc()
 
 	// Double-check pattern: another goroutine might have updated cache while we waited for write lock
-	if i.cachedAssertion != "" && now.Add(5*time.Minute).Before(i.assertionExpiresAt) {
+	if i.cachedAssertion != "" && now.Add(i.jwtRefreshBefore).Before(i.assertionExpiresAt) {
 		log.V(1).Info("Using cached client assertion JWT (double-check)", "expires_at", i.assertionExpiresAt)
 		return i.cachedAssertion, nil
 	}

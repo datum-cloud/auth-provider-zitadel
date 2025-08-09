@@ -11,6 +11,7 @@ type WebhookServerConfig struct {
 	ZitadelPrivateKey  string
 	ZitadelDomain      string
 	JwtExpiration      time.Duration
+	JwtRefreshBefore   time.Duration
 	MetricsBindAddress string
 }
 
