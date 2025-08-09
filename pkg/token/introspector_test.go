@@ -78,7 +78,7 @@ func TestIntrospectorCaching(t *testing.T) {
 	credPath := generateCredentialsFile(t)
 
 	// Create an introspector with a *real* expiration of one hour.
-	intr, err := NewIntrospector(credPath, "https://auth.example.com", time.Hour)
+	intr, err := NewIntrospector(credPath, "https://auth.example.com", time.Hour, 5*time.Minute)
 	if err != nil {
 		t.Fatalf("create introspector: %v", err)
 	}

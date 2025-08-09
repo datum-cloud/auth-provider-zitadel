@@ -42,6 +42,7 @@ func NewAuthenticationWebhookServerCommand(globalConfig *config.GlobalConfig) *c
 	cmd.Flags().StringVar(&cfg.ZitadelPrivateKey, "zitadel-private-key", "private-key.json", "path to Zitadel private key JSON")
 	cmd.Flags().StringVar(&cfg.ZitadelDomain, "zitadel-domain", "https://your_domain", "base URL of the Auth Provider instance (e.g., https://auth.example.com)")
 	cmd.Flags().DurationVar(&cfg.JwtExpiration, "jwt-expiration", time.Hour, "JWT token expiration duration (e.g., 1h, 30m, 2h30m)")
+	cmd.Flags().DurationVar(&cfg.CacheLeeway, "jwt-cache-leeway", 5*time.Minute, "Leeway before JWT expiry to consider cache invalid and force refresh (e.g., 5m)")
 
 	// Metrics flags.
 	cmd.Flags().StringVar(&cfg.MetricsBindAddress, "metrics-bind-address", ":8080", "address the metrics endpoint binds to")
@@ -64,13 +65,14 @@ func runWebhookServer(cmd *cobra.Command, cfg *config.WebhookServerConfig) error
 		"zitadel-private-key", cfg.ZitadelPrivateKey,
 		"zitadel-domain", cfg.ZitadelDomain,
 		"jwt-expiration", cfg.JwtExpiration,
+		"jwt-cache-leeway", cfg.CacheLeeway,
 	)
 
 	log.Info("Metrics bind address",
 		"metrics-bind-address", cfg.MetricsBindAddress,
 	)
 
-	introspector, err := token.NewIntrospector(cfg.ZitadelPrivateKey, cfg.ZitadelDomain, cfg.JwtExpiration)
+	introspector, err := token.NewIntrospector(cfg.ZitadelPrivateKey, cfg.ZitadelDomain, cfg.JwtExpiration, cfg.CacheLeeway)
 	if err != nil {
 		log.Error(err, "Failed to create auth provider introspector")
 		return fmt.Errorf("failed to create auth provider introspector: %w", err)
