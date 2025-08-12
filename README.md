@@ -68,3 +68,13 @@ Follow these steps to run the end-to-end (e2e) tests locally:
    ```bash
    cat test/controller.log
    ```
+
+## Zitadel Instance Setup
+
+1. Create an Actions V2 target that points to the `create-user-webhook` endpoint:
+
+`https://localhost:8888/v1/actions/create-user-account`
+
+1. Create an Actions V2 action based on your UI type:
+   - **Zitadel UI**: Configure the event `user.human.selfregistered` with the previously created target
+   - **Zitadel Custom UI**: Configure the event `user.human.added` with the previously created target
