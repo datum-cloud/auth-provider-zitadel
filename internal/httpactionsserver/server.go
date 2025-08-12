@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,18 +55,27 @@ func NewServer(cfg *ServerConfig, k8sClient client.Client, validateSignatureFunc
 	}
 }
 
+type EventType string
+
+const (
+	EventTypeUserHumanSelfRegistered EventType = "user.human.selfregistered"
+	EventTypeUserHumanAdded          EventType = "user.human.added"
+)
+
+var SupportedUserCreationEvents = []EventType{EventTypeUserHumanSelfRegistered, EventTypeUserHumanAdded}
+
 // createUserAccountRequest represents the expected JSON payload for the endpoint.
 // It matches the structure provided by Zitadel actions.
 type createUserAccountRequest struct {
-	AggregateID   string `json:"aggregateID"`
-	AggregateType string `json:"aggregateType"`
-	ResourceOwner string `json:"resourceOwner"`
-	InstanceID    string `json:"instanceID"`
-	Version       string `json:"version"`
-	Sequence      int    `json:"sequence"`
-	EventType     string `json:"event_type"`
-	CreatedAt     string `json:"created_at"`
-	UserID        string `json:"userID"`
+	AggregateID   string    `json:"aggregateID"`
+	AggregateType string    `json:"aggregateType"`
+	ResourceOwner string    `json:"resourceOwner"`
+	InstanceID    string    `json:"instanceID"`
+	Version       string    `json:"version"`
+	Sequence      int       `json:"sequence"`
+	EventType     EventType `json:"event_type"`
+	CreatedAt     string    `json:"created_at"`
+	UserID        string    `json:"userID"`
 	EventPayload  struct {
 		UserName          string `json:"userName"`
 		FirstName         string `json:"firstName"`
@@ -142,9 +152,8 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	log.V(1).Info("Request body unmarshaled successfully")
-
 	// Validate event type
-	if req.EventType != "user.human.selfregistered" {
+	if !slices.Contains(SupportedUserCreationEvents, req.EventType) {
 		log.Error(nil, "Unsupported event type", "eventType", req.EventType)
 		http.Error(w, fmt.Sprintf("unsupported event type: %s", req.EventType), http.StatusBadRequest)
 		return
