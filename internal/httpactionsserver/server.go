@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -60,6 +61,8 @@ const (
 	EventTypeUserHumanSelfRegistered EventType = "user.human.selfregistered"
 	EventTypeUserHumanAdded          EventType = "user.human.added"
 )
+
+var SupportedUserCreationEvents = []EventType{EventTypeUserHumanSelfRegistered, EventTypeUserHumanAdded}
 
 // createUserAccountRequest represents the expected JSON payload for the endpoint.
 // It matches the structure provided by Zitadel actions.
@@ -150,7 +153,7 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 	}
 	log.V(1).Info("Request body unmarshaled successfully")
 	// Validate event type
-	if req.EventType != EventTypeUserHumanSelfRegistered && req.EventType != EventTypeUserHumanAdded {
+	if !slices.Contains(SupportedUserCreationEvents, req.EventType) {
 		log.Error(nil, "Unsupported event type", "eventType", req.EventType)
 		http.Error(w, fmt.Sprintf("unsupported event type: %s", req.EventType), http.StatusBadRequest)
 		return
