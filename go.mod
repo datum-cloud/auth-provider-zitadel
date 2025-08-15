@@ -7,7 +7,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	github.com/spf13/cobra v1.9.1
-	github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a
+	github.com/zitadel/zitadel v1.87.5
 	go.miloapis.com/milo v0.2.0
 	go.uber.org/zap v1.27.0
 	k8s.io/apimachinery v0.33.3
