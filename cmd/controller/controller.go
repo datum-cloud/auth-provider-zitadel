@@ -416,6 +416,15 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		os.Exit(1)
 	}
 
+	// Setup UserController on core control plane manager
+	if err = (&controller.UserController{
+		Client:  coreControlPlaneMgr.GetClient(),
+		Zitadel: zitadelHtppClient,
+	}).SetupWithManager(coreControlPlaneMgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "User")
+		os.Exit(1)
+	}
+
 	// Add core control plane manager as a runnable that starts only when main manager is leader
 	if err := mgr.Add(&coreControlPlaneRunnable{
 		mgr:                 mgr,
