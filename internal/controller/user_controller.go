@@ -44,17 +44,25 @@ func (f *userFinalizer) Finalize(ctx context.Context, obj client.Object) (finali
 
 	log.Info("Finalizing User deletion", "userName", user.GetName(), "userUID", user.GetUID())
 
-	// Delete the user in Zitadel if it exists.
-	if err := f.Zitadel.DeleteUser(ctx, user.GetName()); err != nil {
+	// Verify if the user exists in Zitadel
+	_, err := f.Zitadel.GetUser(ctx, user.GetName())
+	if err != nil {
 		if errors.IsNotFound(err) {
-			log.Info("User already deleted in Zitadel, skipping", "userName", user.GetName())
+			log.Info("User not found in Zitadel, skipping deletion in Zitadel", "userName", user.GetName())
+			return finalizer.Result{}, nil
 		} else {
-			log.Error(err, "Failed to delete user in Zitadel", "userName", user.GetName())
-			return finalizer.Result{}, fmt.Errorf("failed to delete user in Zitadel: %w", err)
+			log.Error(err, "Failed to get user from Zitadel", "userName", user.GetName())
+			return finalizer.Result{}, fmt.Errorf("failed to get user from Zitadel: %w", err)
 		}
 	}
 
-	log.Info("Successfully deleted user", "userName", user.GetName())
+	// Delete the user in Zitadel.
+	if err := f.Zitadel.DeleteUser(ctx, user.GetName()); err != nil {
+		log.Error(err, "Failed to delete user in Zitadel", "userName", user.GetName())
+		return finalizer.Result{}, fmt.Errorf("failed to delete user in Zitadel: %w", err)
+	}
+
+	log.Info("Successfully deleted user in Zitadel", "userName", user.GetName())
 
 	return finalizer.Result{}, nil
 }
