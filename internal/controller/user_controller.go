@@ -22,7 +22,7 @@ const (
 
 // UserController reconciles User objects to handle deletions and Zitadel cleanup.
 type UserController struct {
-	client.Client
+	Client     client.Client
 	Finalizers finalizer.Finalizers
 	Zitadel    *zitadel.Client
 }
@@ -59,8 +59,7 @@ func (f *userFinalizer) Finalize(ctx context.Context, obj client.Object) (finali
 	return finalizer.Result{}, nil
 }
 
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=users,verbs=get;list;watch;update;patch;delete
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=users/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=iam.miloapis.com,resources=users,verbs=get;update;list;watch;patch
 // +kubebuilder:rbac:groups=iam.miloapis.com,resources=users/finalizers,verbs=update
 
 // Reconcile executes the reconciliation loop for User resources.
@@ -69,7 +68,7 @@ func (r *UserController) Reconcile(ctx context.Context, req reconcile.Request) (
 	log.Info("Starting reconciliation", "request", req)
 
 	user := &iammiloapiscomv1alpha1.User{}
-	if err := r.Get(ctx, req.NamespacedName, user); err != nil {
+	if err := r.Client.Get(ctx, req.NamespacedName, user); err != nil {
 		if errors.IsNotFound(err) {
 			log.Info("User resource not found. Ignoring since object must be deleted.")
 			return ctrl.Result{}, nil
@@ -86,7 +85,7 @@ func (r *UserController) Reconcile(ctx context.Context, req reconcile.Request) (
 	}
 	if finalizeResult.Updated {
 		log.Info("Finalizer updated the User object, updating API server")
-		if updateErr := r.Update(ctx, user); updateErr != nil {
+		if updateErr := r.Client.Update(ctx, user); updateErr != nil {
 			log.Error(updateErr, "Failed to update User after finalizer update")
 			return ctrl.Result{}, fmt.Errorf("failed to update User after finalizer update: %w", updateErr)
 		}
