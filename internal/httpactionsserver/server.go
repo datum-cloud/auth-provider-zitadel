@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -51,6 +50,7 @@ type Server struct {
 func NewServer(cfg *ServerConfig, k8sClient client.Client, validateSignatureFunc ValidateSignatureFunc) *Server {
 	log := logf.Log.WithName("httpactionsserver")
 	log.Info("Creating new HTTP actions server", "addr", cfg.Addr, "tlsEnabled", cfg.CertFile != "" && cfg.KeyFile != "")
+
 	return &Server{
 		config:            cfg,
 		k8sClient:         k8sClient,
@@ -170,16 +170,15 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 
 	// TODO: This is a temporary solution to avoid creating duplicate users.
 	// https://github.com/datum-cloud/enhancements/issues/337
-	_, err = s.getMiloUserByEmail(r.Context(), req.EventPayload.Email)
+	isEmailAlreadyTaken, err := s.isEmailAlreadyTaken(r.Context(), req.EventPayload.Email)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, "Failed to get user resource by email", "email", req.EventPayload.Email)
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte("failed to get user resource by email"))
-			return
-		}
-		log.Info("User does not exist in Milo, creating it.", "email", req.EventPayload.Email)
-	} else {
+		log.Error(err, "Failed to get user resource by email", "email", req.EventPayload.Email)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get user resource by email"))
+		return
+
+	}
+	if isEmailAlreadyTaken {
 		log.Info("User exists in Milo, skipping creation.", "email", req.EventPayload.Email)
 		w.WriteHeader(http.StatusConflict)
 		_, _ = w.Write([]byte("user already exists with same email address"))
@@ -320,13 +319,20 @@ func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
 	log.Info("Successfully wrote response")
 }
 
-func (s *Server) getMiloUserByEmail(ctx context.Context, email string) (*iammiloapiscomv1alpha1.User, error) {
+func (s *Server) isEmailAlreadyTaken(ctx context.Context, email string) (bool, error) {
 	log := logf.FromContext(ctx).WithName("getMiloUserByEmail")
 
-	var userList iammiloapiscomv1alpha1.UserList
-	if err := s.k8sClient.List(ctx, &userList, client.MatchingFields{"spec.email": strings.ToLower(email)}); err != nil {
-		log.Error(err, "failed to list UserInvitations by email")
-		return nil, fmt.Errorf("failed to list UserInvitations by email: %w", err)
+	var users iammiloapiscomv1alpha1.UserList
+	// Using a index would be more efficient, but this is just a temporary solution.
+	if err := s.k8sClient.List(ctx, &users); err != nil {
+		log.Error(err, "failed to list Users")
+		return false, fmt.Errorf("list Users: %w", err)
 	}
-	return &userList.Items[0], nil
+	for i := range users.Items {
+		if strings.EqualFold(users.Items[i].Spec.Email, email) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
