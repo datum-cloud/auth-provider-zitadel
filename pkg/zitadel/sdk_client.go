@@ -53,11 +53,11 @@ func NewSDK(ctx context.Context, cfg SDKConfig) (*SDKClient, error) {
 	host := strings.TrimPrefix(strings.TrimPrefix(cfg.Domain, "https://"), "http://")
 	if host == "" || strings.Contains(host, "/") {
 		klog.Errorf("NewSDK: invalid Domain %q; must be host only (e.g. auth.example.com)", cfg.Domain)
-		return nil, errors.New("Domain must be host only (e.g. auth.example.com)")
+		return nil, errors.New("domain must be host only (e.g. auth.example.com)")
 	}
-	if !(strings.HasPrefix(cfg.Issuer, "https://") || strings.HasPrefix(cfg.Issuer, "http://")) {
+	if !strings.HasPrefix(cfg.Issuer, "https://") && !strings.HasPrefix(cfg.Issuer, "http://") {
 		klog.Errorf("NewSDK: invalid Issuer %q; must include scheme", cfg.Issuer)
-		return nil, errors.New("Issuer must include scheme (e.g. https://auth.example.com)")
+		return nil, errors.New("issuer must include scheme (e.g. https://auth.example.com)")
 	}
 
 	klog.V(2).Infof("NewSDK: creating ZITADEL client (host=%q, issuer scheme ok, key path provided)", host)

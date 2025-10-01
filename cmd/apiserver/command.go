@@ -62,7 +62,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			scheme := runtime.NewScheme()
 			identityinstall.Install(scheme)
 			miloidentity.Install(scheme)
-			clientgoscheme.AddToScheme(scheme)
+			_ = clientgoscheme.AddToScheme(scheme)
 
 			codecs := serializer.NewCodecFactory(scheme)
 
