@@ -11,6 +11,6 @@ spec:
     port: 443
   groupPriorityMinimum: 2000
   versionPriority: 10
-  insecureSkipTLSVerify: true
+  insecureSkipTLSVerify: false
 
 
