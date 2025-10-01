@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount-rbac.yaml
+  - deployment.yaml
+  - service.yaml
+  # Note: APIService is managed in config/apiregistration for separate application to the aggregator cluster
+
+vars:
+  - name: APISERVER_NAMESPACE
+    objref:
+      kind: ServiceAccount
+      version: v1
+      name: zitadel-apiserver
+    fieldref:
+      fieldpath: metadata.namespace
+
+

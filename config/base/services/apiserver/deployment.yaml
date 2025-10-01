@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apiserver
+  labels:
+    app.kubernetes.io/name: auth-provider-zitadel
+    app.kubernetes.io/component: apiserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-provider-zitadel
+      app.kubernetes.io/component: apiserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-provider-zitadel
+        app.kubernetes.io/component: apiserver
+    spec:
+      serviceAccountName: zitadel-apiserver
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: apiserver
+          image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
+          args:
+            - apiserver
+            - --secure-port=8443
+            - --tls-cert-file=$(TLS_CERT_FILE)
+            - --tls-private-key-file=$(TLS_PRIVATE_KEY_FILE)
+            - --kubeconfig=$(KUBECONFIG)
+            - --zitadel-issuer=$(ZITADEL_ISSUER)
+            - --zitadel-api=$(ZITADEL_API)
+            - --zitadel-key=$(ZITADEL_MACHINE_ACCOUNT_KEY_PATH)
+            - -v=4
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: ZITADEL_ISSUER
+              value: "https://zitadel.datum-cloud.com"
+            - name: ZITADEL_API
+              value: "zitadel.datum-cloud.com"
+            - name: ZITADEL_MACHINE_ACCOUNT_KEY_PATH
+              value: "/etc/zitadel/machine-account-key.json"
+            - name: TLS_CERT_FILE
+              value: /etc/kubernetes/pki/client/tls.crt
+            - name: TLS_PRIVATE_KEY_FILE
+              value: /etc/kubernetes/pki/client/tls.key
+            - name: KUBECONFIG
+              value: /etc/milo-control-plane/config/kubeconfig
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts: []
+      volumes: []
+
+

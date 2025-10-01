@@ -47,6 +47,69 @@ workflows?"*
 7. **Integration Bridge**: Seamless integration with Milo's Kubernetes-based
 APIs
 
+## Aggregated Zitadel API Server (virtual Sessions)
+
+This repository includes a small aggregated API server that exposes Zitadel sessions as a Kubernetes-native API under the provider group/version:
+
+- Group/Version: `zitadel.identity.milo.io/v1alpha1`
+- Resource: `sessions`
+- Scope: cluster-scoped, virtual (no etcd)
+- Types: reuses Milo Identity public `Session` types bound to the provider G/V
+
+### What it does
+
+- Authn/Authz via the Kubernetes aggregation layer (delegating to the core apiserver)
+- Enforces self-scoping (users only see and act on their own sessions)
+- Proxies list/get/delete to Zitadel Session Service v2 using the official `zitadel-go/v3` SDK
+
+### Deploy
+
+Kustomize base manifests live under `config/base/services/apiserver/` and are included in `config/base/kustomization.yaml`.
+
+- ServiceAccount & RBAC: `zitadel-apiserver` bound to `system:auth-delegator`
+- Deployment: runs the `apiserver` subcommand from this binary
+- Service: ClusterIP on 443 -> container 8443
+- APIService: registers `v1alpha1.zitadel.identity.milo.io` with the aggregator (currently `insecureSkipTLSVerify: true` – replace with `caBundle` for production)
+
+Environment variables (mounted via Secret/ConfigMap as you prefer):
+
+- `ZITADEL_BASE_URL`: e.g. `https://<tenant>.<region>.zitadel.cloud`
+- `ZITADEL_MACHINE_ACCOUNT_KEY_PATH`: path to Zitadel machine account JSON key (mounted to the container)
+- Optional: `ZITADEL_PAT` (for testing)
+
+### Run locally
+
+```bash
+# Build and run the aggregated server (example):
+go run ./cmd apiserver \
+  --secure-port=8443 \
+  --tls-cert-file=/path/to/tls.crt \
+  --tls-private-key-file=/path/to/tls.key \
+  --kubeconfig=/path/to/kubeconfig
+  
+```
+
+### Test in a cluster
+
+```bash
+# Verify APIService is registered
+kubectl get apiservices | grep zitadel.identity.milo.io
+
+# Discover group/version
+kubectl get --raw /apis/zitadel.identity.milo.io/v1alpha1 | jq
+
+# As a real user (with delegated auth):
+kubectl get sessions.zitadel.identity.milo.io
+kubectl get sessions.zitadel.identity.milo.io <session-id> -o yaml
+kubectl delete sessions.zitadel.identity.milo.io <session-id>
+```
+
+### Notes
+
+- The apiserver is stateless and does not use etcd
+- It relies on the core apiserver for authentication and authorization
+- The service user (machine account JSON key) is used to authenticate to Zitadel
+
 ## Testing
 
 Follow these steps to run the end-to-end (e2e) tests locally:

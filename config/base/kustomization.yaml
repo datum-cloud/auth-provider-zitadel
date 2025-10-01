@@ -11,3 +11,4 @@ resources:
   - rbac
   - services/controller-manager
   - services/authn-webhook
+  - services/apiserver
