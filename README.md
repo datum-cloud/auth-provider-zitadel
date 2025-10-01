@@ -66,43 +66,15 @@ This repository includes a small aggregated API server that exposes Zitadel sess
 
 Kustomize base manifests live under `config/base/services/apiserver/` and are included in `config/base/kustomization.yaml`.
 
-- ServiceAccount & RBAC: `zitadel-apiserver` bound to `system:auth-delegator`
 - Deployment: runs the `apiserver` subcommand from this binary
 - Service: ClusterIP on 443 -> container 8443
-- APIService: registers `v1alpha1.zitadel.identity.milo.io` with the aggregator (currently `insecureSkipTLSVerify: true` – replace with `caBundle` for production)
+- APIService: registers `v1alpha1.zitadel.identity.milo.io` with the aggregator 
 
 Environment variables (mounted via Secret/ConfigMap as you prefer):
 
-- `ZITADEL_BASE_URL`: e.g. `https://<tenant>.<region>.zitadel.cloud`
-- `ZITADEL_MACHINE_ACCOUNT_KEY_PATH`: path to Zitadel machine account JSON key (mounted to the container)
-- Optional: `ZITADEL_PAT` (for testing)
-
-### Run locally
-
-```bash
-# Build and run the aggregated server (example):
-go run ./cmd apiserver \
-  --secure-port=8443 \
-  --tls-cert-file=/path/to/tls.crt \
-  --tls-private-key-file=/path/to/tls.key \
-  --kubeconfig=/path/to/kubeconfig
-  
-```
-
-### Test in a cluster
-
-```bash
-# Verify APIService is registered
-kubectl get apiservices | grep zitadel.identity.milo.io
-
-# Discover group/version
-kubectl get --raw /apis/zitadel.identity.milo.io/v1alpha1 | jq
-
-# As a real user (with delegated auth):
-kubectl get sessions.zitadel.identity.milo.io
-kubectl get sessions.zitadel.identity.milo.io <session-id> -o yaml
-kubectl delete sessions.zitadel.identity.milo.io <session-id>
-```
+- `ZITADEL_API`: e.g. `<tenant>.<region>.zitadel.cloud`
+- `ZITADEL_ISSUER`: e.g. `https://<tenant>.<region>.zitadel.cloud`
+- `ZITADEL_KEY_PATH`: path to Zitadel machine account JSON key (mounted to the container)
 
 ### Notes
 
