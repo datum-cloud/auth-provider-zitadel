@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // NewActionsServerCommand creates the cobra command to start the actions HTTP server.
@@ -51,15 +51,17 @@ If a TLS certificate and key are provided, the server will start in HTTPS mode. 
 			utilruntime.Must(iamiamv1alpha1.AddToScheme(scheme))
 			log.V(1).Info("Successfully built Kubernetes scheme")
 
-			log.Info("Creating Kubernetes client")
-			k8sClient, err := client.New(k8sConfig, client.Options{Scheme: scheme})
+			log.Info("Creating controller-runtime manager with cache")
+			mgr, err := manager.New(k8sConfig, manager.Options{
+				Scheme: scheme,
+			})
 			if err != nil {
-				log.Error(err, "Failed to create Kubernetes client")
+				log.Error(err, "Failed to create controller manager")
 				return err
 			}
-			log.V(1).Info("Successfully created Kubernetes client")
+			log.V(1).Info("Successfully created controller manager")
 
-			// If signature validation is enabled, validate the Zitadel Webhook Payload
+			// Determine the signature validation function.
 			log.Info("Configuring signature validation", "enabled", !cfg.DisableSignatureValidation)
 			var validateSignatureFunc httpactionsserver.ValidateSignatureFunc
 			if cfg.DisableSignatureValidation {
@@ -74,9 +76,29 @@ If a TLS certificate and key are provided, the server will start in HTTPS mode. 
 				validateSignatureFunc = actions.ValidatePayload
 			}
 
-			// Start the server
-			log.Info("Starting HTTP actions server")
+			// Create the actions HTTP server once with final dependencies.
+			k8sClient := mgr.GetClient()
 			svr := httpactionsserver.NewServer(cfg, k8sClient, validateSignatureFunc)
+
+			// Register field indices via server helper before starting the manager.
+			if err := svr.SetupWithManager(cmd.Context(), mgr); err != nil {
+				log.Error(err, "Failed to set up server with manager")
+				return err
+			}
+
+			// Start the manager in the background so that cache is kept up to date.
+			log.Info("Starting controller manager cache")
+			go func() {
+				if err := mgr.Start(cmd.Context()); err != nil {
+					log.Error(err, "Controller manager stopped with error")
+				}
+			}()
+
+			if ok := mgr.GetCache().WaitForCacheSync(cmd.Context()); !ok {
+				return fmt.Errorf("cache sync failed")
+			}
+			log.V(1).Info("Cache successfully synced")
+
 			return svr.Start()
 		},
 	}

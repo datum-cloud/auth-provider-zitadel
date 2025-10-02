@@ -12,6 +12,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -323,16 +324,31 @@ func (s *Server) isEmailAlreadyTaken(ctx context.Context, email string) (bool, e
 	log := logf.FromContext(ctx).WithName("getMiloUserByEmail")
 
 	var users iammiloapiscomv1alpha1.UserList
-	// Using a index would be more efficient, but this is just a temporary solution.
-	if err := s.k8sClient.List(ctx, &users); err != nil {
-		log.Error(err, "failed to list Users")
+	if err := s.k8sClient.List(
+		ctx,
+		&users,
+		client.MatchingFields{"spec.email": strings.ToLower(email)},
+	); err != nil {
+		log.Error(err, "failed to list Users with field selector")
 		return false, fmt.Errorf("list Users: %w", err)
 	}
-	for i := range users.Items {
-		if strings.EqualFold(users.Items[i].Spec.Email, email) {
-			return true, nil
-		}
-	}
 
-	return false, nil
+	return len(users.Items) > 0, nil
+}
+
+// SetupWithManager registers necessary field indices with the provided manager.
+// It should be invoked before starting the manager.
+func (s *Server) SetupWithManager(ctx context.Context, mgr manager.Manager) error {
+	log := logf.FromContext(ctx).WithName("server-setup")
+
+	log.Info("Indexing User resources by spec.email")
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &iammiloapiscomv1alpha1.User{}, "spec.email", func(rawObj client.Object) []string {
+		u := rawObj.(*iammiloapiscomv1alpha1.User)
+		return []string{strings.ToLower(u.Spec.Email)}
+	}); err != nil {
+		log.Error(err, "Failed to create field index for User.spec.email")
+		return err
+	}
+	log.Info("Successfully created field index for User.spec.email")
+	return nil
 }
