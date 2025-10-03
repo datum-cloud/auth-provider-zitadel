@@ -47,18 +47,18 @@ workflows?"*
 7. **Integration Bridge**: Seamless integration with Milo's Kubernetes-based
 APIs
 
-## Aggregated Zitadel API Server (virtual Sessions)
+## Zitadel API Server (virtual Sessions)
 
-This repository includes a small aggregated API server that exposes Zitadel sessions as a Kubernetes-native API under the provider group/version:
+This repository includes a small API server that exposes Milo's identity sessions as a Kubernetes-native API under the provider group/version:
 
-- Group/Version: `zitadel.identity.milo.io/v1alpha1`
+- Group/Version: `identity.milo.io/v1alpha1`
 - Resource: `sessions`
 - Scope: cluster-scoped, virtual (no etcd)
 - Types: reuses Milo Identity public `Session` types bound to the provider G/V
 
 ### What it does
 
-- Authn/Authz via the Kubernetes aggregation layer (delegating to the core apiserver)
+- Trusts Milo's inbound request headers (X-Remote-User, X-Remote-Group, X-Remote-Uid, etc)
 - Enforces self-scoping (users only see and act on their own sessions)
 - Proxies list/get/delete to Zitadel Session Service v2 using the official `zitadel-go/v3` SDK
 
@@ -68,13 +68,18 @@ Kustomize base manifests live under `config/base/services/apiserver/` and are in
 
 - Deployment: runs the `apiserver` subcommand from this binary
 - Service: ClusterIP on 443 -> container 8443
-- APIService: registers `v1alpha1.zitadel.identity.milo.io` with the aggregator 
 
 Environment variables (mounted via Secret/ConfigMap as you prefer):
 
 - `ZITADEL_API`: e.g. `<tenant>.<region>.zitadel.cloud`
 - `ZITADEL_ISSUER`: e.g. `https://<tenant>.<region>.zitadel.cloud`
 - `ZITADEL_KEY_PATH`: path to Zitadel machine account JSON key (mounted to the container)
+- `REQUESTHEADER_CLIENT_CA_FILE`: path to PEM CA bundle that signs Milo's client cert
+- `REQUESTHEADER_ALLOWED_NAMES`: allowed CNs for Milo client cert; empty means any signed by CA
+- `REQUESTHEADER_EXTRA_HEADERS_PREFIX`: header name prefixes to determine user extra info
+- `REQUESTHEADER_GROUP_HEADERS`: header names to determine user groups
+- `REQUESTHEADER_USERNAME_HEADERS`: header names to determine user identity
+- `REQUESTHEADER_UID_HEADERS`: header names to determine user UID
 
 ### Notes
 
