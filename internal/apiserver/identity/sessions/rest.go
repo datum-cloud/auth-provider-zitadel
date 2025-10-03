@@ -18,9 +18,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	v1alpha1 "go.miloapis.com/auth-provider-zitadel/pkg/apis/identity/v1alpha1"
 	"go.miloapis.com/auth-provider-zitadel/pkg/zitadel"
-	milov1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
+	milov1alpha1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
 )
 
 type REST struct{ Z zitadel.API }
@@ -33,11 +32,11 @@ var _ rest.TableConvertor = &REST{}
 var _ rest.Storage = &REST{}
 var _ rest.SingularNameProvider = &REST{}
 
-var sessionsGR = schema.GroupResource{Group: v1alpha1.GroupName, Resource: "sessions"}
+var sessionsGR = schema.GroupResource{Group: milov1alpha1.SchemeGroupVersion.Group, Resource: "sessions"}
 
 func (r *REST) NamespaceScoped() bool   { return false }
-func (r *REST) New() runtime.Object     { return &milov1.Session{} }
-func (r *REST) NewList() runtime.Object { return &milov1.SessionList{} }
+func (r *REST) New() runtime.Object     { return &milov1alpha1.Session{} }
+func (r *REST) NewList() runtime.Object { return &milov1alpha1.SessionList{} }
 func (r *REST) GetSingularName() string { return "session" }
 
 func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.Object, error) {
@@ -54,18 +53,18 @@ func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.O
 		return nil, translateErr(err, "")
 	}
 
-	out := &milov1.SessionList{
-		TypeMeta: metav1.TypeMeta{Kind: "SessionList", APIVersion: v1alpha1.SchemeGroupVersion.String()},
+	out := &milov1alpha1.SessionList{
+		TypeMeta: metav1.TypeMeta{Kind: "SessionList", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
 	}
 	now := time.Now()
 	for _, s := range zs {
-		out.Items = append(out.Items, milov1.Session{
-			TypeMeta: metav1.TypeMeta{Kind: "Session", APIVersion: v1alpha1.SchemeGroupVersion.String()},
+		out.Items = append(out.Items, milov1alpha1.Session{
+			TypeMeta: metav1.TypeMeta{Kind: "Session", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              s.ID,
 				CreationTimestamp: metav1.NewTime(now),
 			},
-			Status: milov1.SessionStatus{
+			Status: milov1alpha1.SessionStatus{
 				UserUID:   uid,
 				Provider:  "zitadel",
 				IP:        s.IP,
@@ -96,10 +95,10 @@ func (r *REST) Get(ctx context.Context, name string, _ *metav1.GetOptions) (runt
 		return nil, apierrors.NewForbidden(sessionsGR, name, errors.New("not owner"))
 	}
 	klog.V(3).InfoS("Got session", "name", name, "owner", s.UserID)
-	return &milov1.Session{
-		TypeMeta:   metav1.TypeMeta{Kind: "Session", APIVersion: v1alpha1.SchemeGroupVersion.String()},
+	return &milov1alpha1.Session{
+		TypeMeta:   metav1.TypeMeta{Kind: "Session", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: s.ID},
-		Status: milov1.SessionStatus{
+		Status: milov1alpha1.SessionStatus{
 			UserUID:   s.UserID,
 			Provider:  "zitadel",
 			IP:        s.IP,

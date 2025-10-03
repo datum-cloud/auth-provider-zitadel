@@ -24,10 +24,9 @@ import (
 	registrysessions "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/sessions"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
 	identityinstall "go.miloapis.com/auth-provider-zitadel/pkg/apis/identity"
-	identityv1alpha1 "go.miloapis.com/auth-provider-zitadel/pkg/apis/identity/v1alpha1"
 	"go.miloapis.com/auth-provider-zitadel/pkg/zitadel"
 	miloidentity "go.miloapis.com/milo/pkg/apis/identity"
-	milov1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
+	identityv1alpha1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -113,7 +112,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			cfg.SkipOpenAPIInstallation = false
 			getOpenAPIDefinitions := func(ref openapicommon.ReferenceCallback) map[string]openapicommon.OpenAPIDefinition {
 				base := generatedopenapi.GetOpenAPIDefinitions(ref)
-				id := milov1.GetOpenAPIDefinitions(ref)
+				id := identityv1alpha1.GetOpenAPIDefinitions(ref)
 				for k, v := range id {
 					base[k] = v
 				}
@@ -142,7 +141,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 
 			storage := map[string]rest.Storage{"sessions": &registrysessions.REST{Z: zc}}
 
-			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.GroupName, scheme, metav1.ParameterCodec, codecs)
+			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.SchemeGroupVersion.String(), scheme, metav1.ParameterCodec, codecs)
 			agi.VersionedResourcesStorageMap = map[string]map[string]rest.Storage{"v1alpha1": storage}
 			if err := srv.InstallAPIGroup(&agi); err != nil {
 				return fmt.Errorf("install api group: %w", err)
