@@ -17,7 +17,6 @@ spec:
         app.kubernetes.io/name: auth-provider-zitadel
         app.kubernetes.io/component: apiserver
     spec:
-      serviceAccountName: zitadel-apiserver
       securityContext:
         runAsNonRoot: true
         seccompProfile:
