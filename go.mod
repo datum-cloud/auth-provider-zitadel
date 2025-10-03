@@ -11,7 +11,7 @@ require (
 	github.com/zitadel/oidc/v3 v3.44.0
 	github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a
 	github.com/zitadel/zitadel-go/v3 v3.13.0
-	go.miloapis.com/milo v0.4.5-0.20250927042833-380214e62a01
+	go.miloapis.com/milo v0.4.5-0.20251003204712-0ea59b1cb611
 	go.uber.org/zap v1.27.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.16.0
