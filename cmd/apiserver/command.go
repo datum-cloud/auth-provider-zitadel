@@ -141,7 +141,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 
 			storage := map[string]rest.Storage{"sessions": &registrysessions.REST{Z: zc}}
 
-			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.SchemeGroupVersion.String(), scheme, metav1.ParameterCodec, codecs)
+			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.SchemeGroupVersion.Group, scheme, metav1.ParameterCodec, codecs)
 			agi.VersionedResourcesStorageMap = map[string]map[string]rest.Storage{"v1alpha1": storage}
 			if err := srv.InstallAPIGroup(&agi); err != nil {
 				return fmt.Errorf("install api group: %w", err)
