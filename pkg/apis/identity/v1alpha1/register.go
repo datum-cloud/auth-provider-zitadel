@@ -7,8 +7,8 @@ import (
 	milov1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
 )
 
-// GroupName is the API group served by the aggregated apiserver for Zitadel sessions.
-const GroupName = "zitadel.identity.miloapis.com"
+// GroupName is the Milo public identity API group served by this apiserver.
+const GroupName = "identity.miloapis.com"
 
 // SchemeGroupVersion is the group version used to register these objects.
 var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
