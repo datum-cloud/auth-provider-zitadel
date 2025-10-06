@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: apiserver
+  namespace: auth-provider-zitadel-system
+  labels:
+    app.kubernetes.io/name: auth-provider-zitadel
+    app.kubernetes.io/component: apiserver
+spec:
+  selector:
+    app.kubernetes.io/name: auth-provider-zitadel
+    app.kubernetes.io/component: apiserver
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+
+

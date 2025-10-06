@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap/zapcore"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -29,6 +30,11 @@ func InitializeLogging(cfg *GlobalConfig) error {
 		level = zapcore.InfoLevel
 	}
 
+	// If klog verbosity is enabled (e.g., -v>=1), honor it by enabling debug-level logs
+	if klog.V(1).Enabled() {
+		level = zapcore.DebugLevel
+	}
+
 	opts := zap.Options{
 		Development: cfg.Development,
 		Level:       level,
@@ -36,6 +42,11 @@ func InitializeLogging(cfg *GlobalConfig) error {
 
 	// Configure log format - console format enables development mode
 	if cfg.LogFormat == "console" {
+		opts.Development = true
+	}
+
+	// If verbosity is enabled via klog (-v>=1), also enable development mode to avoid sampling
+	if klog.V(1).Enabled() {
 		opts.Development = true
 	}
 

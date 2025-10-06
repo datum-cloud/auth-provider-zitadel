@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.miloapis.com/auth-provider-zitadel/cmd/actionsserver"
+	zitadelapiserver "go.miloapis.com/auth-provider-zitadel/cmd/apiserver"
 	"go.miloapis.com/auth-provider-zitadel/cmd/controller"
 	"go.miloapis.com/auth-provider-zitadel/cmd/version"
 	"go.miloapis.com/auth-provider-zitadel/cmd/webhookserver"
@@ -49,6 +50,7 @@ func execute() error {
 	rootCmd.AddCommand(version.NewVersionCommand())
 	rootCmd.AddCommand(actionsserver.NewActionsServerCommand(globalConfig))
 	rootCmd.AddCommand(webhookserver.NewAuthenticationWebhookServerCommand(globalConfig))
+	rootCmd.AddCommand(zitadelapiserver.NewAPIServerCommand(globalConfig))
 
 	return rootCmd.Execute()
 }
