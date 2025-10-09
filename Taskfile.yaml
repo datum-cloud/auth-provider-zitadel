@@ -32,6 +32,19 @@ tasks:
             --jwt-expiration 1h \
             --metrics-bind-address :8081
 
+  run-actionsserver:
+    desc: Run the Zitadel actions HTTP server locally
+    deps:
+      - generate-webhookserver-certs
+    cmds:
+      - |
+          go run cmd/main.go actions-server \
+            --addr :8082 \
+            --cert-file "{{.CERTS_DIR}}/server.crt" \
+            --key-file "{{.CERTS_DIR}}/server.key" \
+            --kubeconfig "$HOME/.kube/config" \
+            --disable-signature-validation
+
           
 
   
