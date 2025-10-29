@@ -11,7 +11,7 @@ require (
 	github.com/zitadel/oidc/v3 v3.44.0
 	github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a
 	github.com/zitadel/zitadel-go/v3 v3.13.0
-	go.miloapis.com/milo v0.4.5-0.20251003214941-f82bfd4b1ba3
+	go.miloapis.com/milo v0.6.1-0.20251022132600-85f370c87065
 	go.uber.org/zap v1.27.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.16.0
@@ -22,6 +22,7 @@ require (
 	k8s.io/apiserver v0.33.3
 	k8s.io/client-go v0.33.3
 	k8s.io/component-base v0.33.3
+	k8s.io/klog/v2 v2.130.1
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
 	k8s.io/kubernetes v1.32.0
 	sigs.k8s.io/controller-runtime v0.21.0
@@ -114,7 +115,6 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.33.0 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kms v0.33.3 // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect

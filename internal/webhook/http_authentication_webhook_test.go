@@ -14,6 +14,12 @@ import (
 	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 
 	"go.miloapis.com/auth-provider-zitadel/pkg/token"
 )
@@ -71,7 +77,7 @@ func generateCredentialsFile(t *testing.T) string {
 // buildTestHandler returns the HTTP handler under test along with the
 // underlying introspection test server so that the caller can control the
 // server's behaviour.
-func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]any) (http.Handler, *httptest.Server) {
+func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]any, kubeObjs ...client.Object) (http.Handler, *httptest.Server) {
 	t.Helper()
 
 	// Create a fake Zitadel introspection endpoint.
@@ -92,7 +98,17 @@ func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]
 		t.Fatalf("create introspector: %v", err)
 	}
 
-	handler := NewAuthenticationWebhookV1(introspector)
+	// Prepare fake k8s client
+	scheme := runtime.NewScheme()
+	if err := authenticationv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add auth scheme: %v", err)
+	}
+	if err := iammiloapiscomv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add iam scheme: %v", err)
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(kubeObjs...).Build()
+
+	handler := NewAuthenticationWebhookV1(introspector, fakeClient)
 	return handler, introspectionSrv
 }
 
@@ -109,6 +125,8 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 		introspectionPayload map[string]any
 		expectHTTPCode       int
 		expectAuthenticated  bool
+		expectExtraApproval  bool
+		expectExtraValue     string
 		expectErrorSubstring string
 	}{
 		{
@@ -155,6 +173,8 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			introspectionPayload: map[string]any{"active": true, "sub": "my-user", "email": "user@example.com"},
 			expectHTTPCode:       http.StatusOK,
 			expectAuthenticated:  true,
+			expectExtraApproval:  true,
+			expectExtraValue:     string(iammiloapiscomv1alpha1.RegistrationApprovalStateApproved),
 		},
 		{
 			name:                 "machine user token active",
@@ -164,6 +184,8 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			introspectionPayload: map[string]any{"active": true, "sub": "machine-user", "username": "machine-user@example.com"},
 			expectHTTPCode:       http.StatusOK,
 			expectAuthenticated:  true,
+			expectExtraApproval:  true,
+			expectExtraValue:     string(iammiloapiscomv1alpha1.RegistrationApprovalStateApproved),
 		},
 		{
 			name:                 "missing email or username",
@@ -173,6 +195,7 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			introspectionPayload: map[string]any{"active": true, "sub": "machine-user"},
 			expectHTTPCode:       http.StatusOK,
 			expectAuthenticated:  false,
+			expectExtraApproval:  false,
 		},
 	}
 
@@ -183,14 +206,21 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			// For non-POST test we don't need introspection server.
 			var handler http.Handler
 			var srv *httptest.Server
-			if tc.method != http.MethodGet { // requires handler with introspection stub
-				handler, srv = buildTestHandler(t, tc.introspectionStatus, tc.introspectionPayload)
-				defer srv.Close()
-			} else {
-				// Build dummy handler; introspection not reached.
-				handler, srv = buildTestHandler(t, http.StatusOK, map[string]any{"active": true})
-				defer srv.Close()
+			kubeObjs := []client.Object{}
+			if tc.expectAuthenticated {
+				// create fake User with approved registration
+				if sub, ok := tc.introspectionPayload["sub"].(string); ok {
+					kubeObjs = append(kubeObjs, &iammiloapiscomv1alpha1.User{
+						TypeMeta:   metav1.TypeMeta{Kind: "User", APIVersion: "iam.miloapis.com/v1alpha1"},
+						ObjectMeta: metav1.ObjectMeta{Name: sub},
+						Status: iammiloapiscomv1alpha1.UserStatus{
+							RegistrationApproval: iammiloapiscomv1alpha1.RegistrationApprovalStateApproved,
+						},
+					})
+				}
 			}
+			handler, srv = buildTestHandler(t, tc.introspectionStatus, tc.introspectionPayload, kubeObjs...)
+			defer srv.Close()
 
 			// Build request.
 			var reqBody bytes.Buffer
@@ -238,6 +268,16 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			if tc.expectAuthenticated {
 				if resp.Status.User.Username == "" || resp.Status.User.UID == "" {
 					t.Fatalf("expected user info to be set on success")
+				}
+			}
+
+			if tc.expectExtraApproval {
+				val, ok := resp.Status.User.Extra["iam.miloapis.com/registrationApproval"]
+				if !ok {
+					t.Fatalf("expected registrationApproval in extra")
+				}
+				if len(val) == 0 || val[0] != tc.expectExtraValue {
+					t.Fatalf("unexpected registrationApproval value: %v", val)
 				}
 			}
 		})

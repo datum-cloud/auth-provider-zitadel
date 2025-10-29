@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -89,6 +90,9 @@ func runWebhookServer(cmd *cobra.Command, cfg *config.WebhookServerConfig) error
 	if err := authenticationv1.AddToScheme(runtimeScheme); err != nil {
 		return fmt.Errorf("failed to add authenticationv1 scheme: %w", err)
 	}
+	if err := iammiloapiscomv1alpha1.AddToScheme(runtimeScheme); err != nil {
+		return fmt.Errorf("failed to add iammiloapiscomv1alpha1 scheme: %w", err)
+	}
 
 	log.Info("Creating manager")
 	mgr, err := manager.New(restConfig, manager.Options{
@@ -110,7 +114,7 @@ func runWebhookServer(cmd *cobra.Command, cfg *config.WebhookServerConfig) error
 	log.Info("Setting up webhook server")
 	hookServer := mgr.GetWebhookServer()
 
-	webhookv1 := webhook.NewAuthenticationWebhookV1(introspector)
+	webhookv1 := webhook.NewAuthenticationWebhookV1(introspector, mgr.GetClient())
 	hookServer.Register(webhookv1.Endpoint, webhookv1)
 
 	log.Info("Starting manager")
