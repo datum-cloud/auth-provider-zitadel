@@ -1,15 +1,18 @@
 package httpactionsserver
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -48,6 +51,7 @@ type Server struct {
 func NewServer(cfg *ServerConfig, k8sClient client.Client, validateSignatureFunc ValidateSignatureFunc) *Server {
 	log := logf.Log.WithName("httpactionsserver")
 	log.Info("Creating new HTTP actions server", "addr", cfg.Addr, "tlsEnabled", cfg.CertFile != "" && cfg.KeyFile != "")
+
 	return &Server{
 		config:            cfg,
 		k8sClient:         k8sClient,
@@ -164,6 +168,23 @@ func (s *Server) createUserAccountHandler(w http.ResponseWriter, r *http.Request
 		"email", req.EventPayload.Email,
 		"zitadelUserId", req.UserID,
 	)
+
+	// TODO: This is a temporary solution to avoid creating duplicate users.
+	// https://github.com/datum-cloud/enhancements/issues/337
+	isEmailAlreadyTaken, err := s.isEmailAlreadyTaken(r.Context(), req.EventPayload.Email)
+	if err != nil {
+		log.Error(err, "Failed to get user resource by email", "email", req.EventPayload.Email)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get user resource by email"))
+		return
+
+	}
+	if isEmailAlreadyTaken {
+		log.Info("User exists in Milo, skipping creation.", "email", req.EventPayload.Email)
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte("user already exists with same email address"))
+		return
+	}
 
 	user := &iammiloapiscomv1alpha1.User{
 		TypeMeta: metav1.TypeMeta{
@@ -297,4 +318,37 @@ func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Info("Successfully wrote response")
+}
+
+func (s *Server) isEmailAlreadyTaken(ctx context.Context, email string) (bool, error) {
+	log := logf.FromContext(ctx).WithName("getMiloUserByEmail")
+
+	var users iammiloapiscomv1alpha1.UserList
+	if err := s.k8sClient.List(
+		ctx,
+		&users,
+		client.MatchingFields{"spec.email": strings.ToLower(email)},
+	); err != nil {
+		log.Error(err, "failed to list Users with field selector")
+		return false, fmt.Errorf("list Users: %w", err)
+	}
+
+	return len(users.Items) > 0, nil
+}
+
+// SetupWithManager registers necessary field indices with the provided manager.
+// It should be invoked before starting the manager.
+func (s *Server) SetupWithManager(ctx context.Context, mgr manager.Manager) error {
+	log := logf.FromContext(ctx).WithName("server-setup")
+
+	log.Info("Indexing User resources by spec.email")
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &iammiloapiscomv1alpha1.User{}, "spec.email", func(rawObj client.Object) []string {
+		u := rawObj.(*iammiloapiscomv1alpha1.User)
+		return []string{strings.ToLower(u.Spec.Email)}
+	}); err != nil {
+		log.Error(err, "Failed to create field index for User.spec.email")
+		return err
+	}
+	log.Info("Successfully created field index for User.spec.email")
+	return nil
 }
