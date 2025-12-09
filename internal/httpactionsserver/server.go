@@ -389,7 +389,8 @@ func (s *Server) idpIntentSucceededHandler(w http.ResponseWriter, r *http.Reques
 	current.Status.AvatarURL = avatarURL
 	current.Status.LastLoginProvider = idpProvider
 
-	if err := s.k8sClient.Status().Patch(ctx, current, client.MergeFrom(original)); err != nil {
+	fieldManagerName := "idp-intent-succeeded"
+	if err := s.k8sClient.Status().Patch(ctx, current, client.MergeFrom(original), client.FieldOwner(fieldManagerName)); err != nil {
 		log.Error(err, "Failed to patch User status")
 		http.Error(w, "failed to patch user", http.StatusInternalServerError)
 		return
