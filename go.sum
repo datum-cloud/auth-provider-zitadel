@@ -211,6 +211,8 @@ go.etcd.io/etcd/server/v3 v3.5.21 h1:9w0/k12majtgarGmlMVuhwXRI2ob3/d1Ik3X5TKo0yU
 go.etcd.io/etcd/server/v3 v3.5.21/go.mod h1:G1mOzdwuzKT1VRL7SqRchli/qcFrtLBTAQ4lV20sXXo=
 go.miloapis.com/milo v0.6.1-0.20251022132600-85f370c87065 h1:DDVrMWHgH1tL9GUy05peVNPcropgxreRWVUAZDSR8ac=
 go.miloapis.com/milo v0.6.1-0.20251022132600-85f370c87065/go.mod h1:oqwtjt5zV+Q07TFADtq/dZGmqw/U67VS0Pq1H+97Gi8=
+go.miloapis.com/milo v0.12.7-0.20251209175533-fd3c212adb82 h1:kK3Jpba59+s0Zrwo4T5aXpm/GCO1vG/IPLYPR5ljebY=
+go.miloapis.com/milo v0.12.7-0.20251209175533-fd3c212adb82/go.mod h1:xOFYvUsvSZV3z6eow5YdB5C/qRQf2s/5/arcfJs5XPg=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.60.0 h1:x7wzEgXfnzJcHDwStJT+mxOz4etr2EcexjqhBvmoakw=

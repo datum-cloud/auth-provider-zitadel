@@ -2,11 +2,14 @@ package httpactionsserver
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -94,6 +97,7 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/actions/create-user-account", s.createUserAccountHandler)
 	mux.HandleFunc("/v1/actions/customize-jwt", s.customizeJwtHandler)
+	mux.HandleFunc("/v1/actions/idp-intent-succeeded", s.idpIntentSucceededHandler)
 
 	srv := &http.Server{
 		Addr:    s.config.Addr,
@@ -218,6 +222,33 @@ type CustomizeJwtHandlerRequest struct {
 	} `json:"user"`
 }
 
+// IdpIntentSucceededRequest models JUST the fields we need from an idpintent.succeeded Zitadel payload.
+type IdpIntentSucceededRequest struct {
+	EventType    string `json:"event_type"`
+	UserID       string `json:"userId"`
+	EventPayload struct {
+		IDPUser    string `json:"idpUser"`
+		IDPIdToken string `json:"idpIdToken,omitempty"`
+		UserID     string `json:"userId,omitempty"`
+	} `json:"event_payload"`
+}
+
+// IDPUserData represents the decoded idpUser data from identity providers
+type IDPUserData struct {
+	User struct {
+		Email         string `json:"email"`
+		EmailVerified bool   `json:"email_verified"`
+		FamilyName    string `json:"family_name"`
+		GivenName     string `json:"given_name"`
+		Name          string `json:"name"`
+		Picture       string `json:"picture"`
+		Sub           string `json:"sub"`
+		// GitHub specific fields
+		AvatarURL string `json:"avatar_url,omitempty"`
+		Login     string `json:"login,omitempty"`
+	} `json:"User"`
+}
+
 type Metadata struct {
 	Key   string `json:"key"`
 	Value []byte `json:"value"`
@@ -297,4 +328,105 @@ func (s *Server) customizeJwtHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Info("Successfully wrote response")
+}
+
+// idpIntentSucceededHandler processes the idpintent.succeeded action to capture the IDP provider and avatar URL.
+func (s *Server) idpIntentSucceededHandler(w http.ResponseWriter, r *http.Request) {
+	log := logf.FromContext(r.Context()).WithName("idpIntentSucceededHandler")
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Error(err, "Failed to read request body")
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.validateSignature(bodyBytes, r.Header.Get("Zitadel-Signature"), s.config.SigningKey); err != nil {
+		log.Error(err, "Signature validation failed")
+		http.Error(w, fmt.Sprintf("signature validation failed: %v", err), http.StatusUnauthorized)
+		return
+	}
+
+	var req IdpIntentSucceededRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		log.Error(err, "Failed to parse body")
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if req.EventType != "idpintent.succeeded" || req.EventPayload.IDPUser == "" {
+		log.Error(nil, "Unexpected event type", "eventType", req.EventType)
+		http.Error(w, "unexpected event", http.StatusBadRequest)
+		return
+	}
+
+	// Decode idpUser JSON
+	raw, err := base64.StdEncoding.DecodeString(req.EventPayload.IDPUser)
+	if err != nil {
+		log.Error(err, "Failed to decode idpUser")
+		http.Error(w, "invalid idpUser", http.StatusBadRequest)
+		return
+	}
+
+	// Detect provider & avatar generically (supports Google & GitHub)
+	idpProvider, avatarURL, perr := parseIDPUserData(raw)
+	if perr != nil {
+		log.Error(perr, "Failed to parse idpUser JSON")
+		http.Error(w, "invalid idpUser data", http.StatusBadRequest)
+		return
+	}
+
+	// Update user avatar URL and last login provider
+	ctx := r.Context()
+	current := &iammiloapiscomv1alpha1.User{}
+	if err := s.k8sClient.Get(ctx, client.ObjectKey{Name: req.EventPayload.UserID}, current); err != nil {
+		log.Error(err, "Failed to get User resource", "userId", req.EventPayload.UserID)
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+	original := current.DeepCopy()
+
+	current.Status.AvatarURL = avatarURL
+	current.Status.LastLoginProvider = idpProvider
+
+	if err := s.k8sClient.Status().Patch(ctx, current, client.MergeFrom(original)); err != nil {
+		log.Error(err, "Failed to patch User status")
+		http.Error(w, "failed to patch user", http.StatusInternalServerError)
+		return
+	}
+
+	log.Info("Processed idpintent.succeeded", "idpProvider", idpProvider, "avatarURL", avatarURL, "userId", req.EventPayload.UserID)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("success"))
+}
+
+// parseIDPUserData inspects the raw json of idpUser (base64 decoded) and
+// returns provider and avatar URL best effort without relying on rigid structs.
+func parseIDPUserData(raw []byte) (iammiloapiscomv1alpha1.AuthProvider, string, error) {
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return "", "", err
+	}
+
+	// Google format: {"User": {"picture": "..."}}
+	if user, ok := m["User"].(map[string]interface{}); ok {
+		if pic, ok := user["picture"].(string); ok && pic != "" {
+			return iammiloapiscomv1alpha1.AuthProviderGoogle, pic, nil
+		}
+	}
+
+	// GitHub format: top-level avatar_url
+	if avatar, ok := m["avatar_url"].(string); ok && avatar != "" {
+		return iammiloapiscomv1alpha1.AuthProviderGitHub, avatar, nil
+	}
+
+	// Also google picture could be top-level
+	if pic, ok := m["picture"].(string); ok && pic != "" {
+		if strings.Contains(pic, "googleusercontent.com") {
+			return iammiloapiscomv1alpha1.AuthProviderGoogle, pic, nil
+		}
+
+	}
+
+	return "", "", errors.New("unknown idp provider")
 }
