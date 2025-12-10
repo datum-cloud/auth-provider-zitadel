@@ -31,7 +31,16 @@ tasks:
             --zitadel-domain "{{.ZITADEL_DOMAIN}}" \
             --jwt-expiration 1h \
             --metrics-bind-address :8081
-
-          
-
+            
+  run-actionsserver:
+    desc: Run the HTTP actions server locally
+    deps:
+      - generate-webhookserver-certs
+    cmds:
+      - |
+          go run cmd/main.go actions-server \
+            --addr :8443 \
+            --kubeconfig ~/.kube/config \
+            --disable-signature-validation=true
   
+
