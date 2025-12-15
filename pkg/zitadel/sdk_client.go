@@ -118,11 +118,12 @@ func (c *SDKClient) ListSessions(ctx context.Context, userID string) ([]Session,
 	out := make([]Session, 0, len(resp.GetSessions()))
 	for _, s := range resp.GetSessions() {
 		out = append(out, Session{
-			ID:        s.GetId(),
-			UserID:    s.GetFactors().GetUser().GetId(),
-			IP:        s.GetUserAgent().GetIp(),
-			CreatedAt: toTime(s.GetCreationDate()),
-			ExpiresAt: toTimePtr(s.GetExpirationDate()),
+			ID:            s.GetId(),
+			UserID:        s.GetFactors().GetUser().GetId(),
+			IP:            s.GetUserAgent().GetIp(),
+			FingerprintID: s.GetUserAgent().GetFingerprintId(),
+			CreatedAt:     toTime(s.GetCreationDate()),
+			ExpiresAt:     toTimePtr(s.GetExpirationDate()),
 		})
 	}
 	klog.V(2).Infof("ListSessions: found %d session(s) for userID=%q", len(out), userID)
@@ -140,11 +141,12 @@ func (c *SDKClient) GetSession(ctx context.Context, id string) (*Session, error)
 	}
 	s := r.GetSession()
 	res := &Session{
-		ID:        s.GetId(),
-		UserID:    s.GetFactors().GetUser().GetId(),
-		IP:        s.GetUserAgent().GetIp(),
-		CreatedAt: toTime(s.GetCreationDate()),
-		ExpiresAt: toTimePtr(s.GetExpirationDate()),
+		ID:            s.GetId(),
+		UserID:        s.GetFactors().GetUser().GetId(),
+		IP:            s.GetUserAgent().GetIp(),
+		FingerprintID: s.GetUserAgent().GetFingerprintId(),
+		CreatedAt:     toTime(s.GetCreationDate()),
+		ExpiresAt:     toTimePtr(s.GetExpirationDate()),
 	}
 	klog.V(3).Infof("GetSession: session id=%q fetched (user=%q)", res.ID, res.UserID)
 	return res, nil
