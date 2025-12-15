@@ -65,11 +65,12 @@ func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.O
 				CreationTimestamp: metav1.NewTime(now),
 			},
 			Status: milov1alpha1.SessionStatus{
-				UserUID:   uid,
-				Provider:  "zitadel",
-				IP:        s.IP,
-				CreatedAt: metav1.NewTime(s.CreatedAt),
-				ExpiresAt: toPtrTime(s.ExpiresAt),
+				UserUID:       uid,
+				Provider:      "zitadel",
+				IP:            s.IP,
+				FingerprintID: s.FingerprintID,
+				CreatedAt:     metav1.NewTime(s.CreatedAt),
+				ExpiresAt:     toPtrTime(s.ExpiresAt),
 			},
 		})
 	}
@@ -99,11 +100,12 @@ func (r *REST) Get(ctx context.Context, name string, _ *metav1.GetOptions) (runt
 		TypeMeta:   metav1.TypeMeta{Kind: "Session", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: s.ID},
 		Status: milov1alpha1.SessionStatus{
-			UserUID:   s.UserID,
-			Provider:  "zitadel",
-			IP:        s.IP,
-			CreatedAt: metav1.NewTime(s.CreatedAt),
-			ExpiresAt: toPtrTime(s.ExpiresAt),
+			UserUID:       s.UserID,
+			Provider:      "zitadel",
+			IP:            s.IP,
+			FingerprintID: s.FingerprintID,
+			CreatedAt:     metav1.NewTime(s.CreatedAt),
+			ExpiresAt:     toPtrTime(s.ExpiresAt),
 		},
 	}, nil
 }

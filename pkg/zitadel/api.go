@@ -7,11 +7,12 @@ import (
 
 // Session represents a Zitadel session distilled for Kubernetes exposure.
 type Session struct {
-	ID        string
-	UserID    string
-	IP        string
-	CreatedAt time.Time
-	ExpiresAt *time.Time
+	ID            string
+	UserID        string
+	IP            string
+	FingerprintID string
+	CreatedAt     time.Time
+	ExpiresAt     *time.Time
 }
 
 // API is the minimal surface needed by our storage to serve sessions.
