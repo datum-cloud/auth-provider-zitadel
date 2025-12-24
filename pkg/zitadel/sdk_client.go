@@ -9,7 +9,8 @@ import (
 
 	"github.com/zitadel/oidc/v3/pkg/client/profile"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
-	v2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/session/v2"
+	sessionv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/session/v2"
+	userv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
 	"golang.org/x/oauth2"
 	pb "google.golang.org/protobuf/types/known/timestamppb"
@@ -27,7 +28,10 @@ type SDKConfig struct {
 	KeyPath string
 }
 
-type SDKClient struct{ sess v2.SessionServiceClient }
+type SDKClient struct {
+	sess sessionv2.SessionServiceClient
+	user userv2.UserServiceClient
+}
 
 // NewSDK builds a client bound to the SessionService v2.
 // It validates config (including env var fallbacks) and sets up auth via a JWT
@@ -97,17 +101,20 @@ func NewSDK(ctx context.Context, cfg SDKConfig) (*SDKClient, error) {
 		return nil, err
 	}
 
-	klog.V(2).Info("NewSDK: SessionServiceV2 client ready")
-	return &SDKClient{sess: cl.SessionServiceV2()}, nil
+	klog.V(2).Info("NewSDK: SessionServiceV2 and UserServiceV2 clients ready")
+	return &SDKClient{
+		sess: cl.SessionServiceV2(),
+		user: cl.UserServiceV2(),
+	}, nil
 }
 
 // ListSessions retrieves sessions for a given user using the v2 SessionService.
 func (c *SDKClient) ListSessions(ctx context.Context, userID string) ([]Session, error) {
 	klog.V(2).Infof("ListSessions: listing sessions for userID=%q", userID)
 
-	resp, err := c.sess.ListSessions(ctx, &v2.ListSessionsRequest{
-		Queries: []*v2.SearchQuery{
-			{Query: &v2.SearchQuery_UserIdQuery{UserIdQuery: &v2.UserIDQuery{Id: userID}}},
+	resp, err := c.sess.ListSessions(ctx, &sessionv2.ListSessionsRequest{
+		Queries: []*sessionv2.SearchQuery{
+			{Query: &sessionv2.SearchQuery_UserIdQuery{UserIdQuery: &sessionv2.UserIDQuery{Id: userID}}},
 		},
 	})
 	if err != nil {
@@ -134,7 +141,7 @@ func (c *SDKClient) ListSessions(ctx context.Context, userID string) ([]Session,
 func (c *SDKClient) GetSession(ctx context.Context, id string) (*Session, error) {
 	klog.V(2).Infof("GetSession: fetching session id=%q", id)
 
-	r, err := c.sess.GetSession(ctx, &v2.GetSessionRequest{SessionId: id})
+	r, err := c.sess.GetSession(ctx, &sessionv2.GetSessionRequest{SessionId: id})
 	if err != nil {
 		klog.Errorf("GetSession: API call failed for id=%q: %v", id, err)
 		return nil, err
@@ -158,7 +165,7 @@ func (c *SDKClient) GetSession(ctx context.Context, id string) (*Session, error)
 func (c *SDKClient) DeleteSession(ctx context.Context, _ string, id string) error {
 	klog.V(2).Infof("DeleteSession: deleting session id=%q", id)
 
-	_, err := c.sess.DeleteSession(ctx, &v2.DeleteSessionRequest{SessionId: id})
+	_, err := c.sess.DeleteSession(ctx, &sessionv2.DeleteSessionRequest{SessionId: id})
 	if err != nil {
 		klog.Errorf("DeleteSession: API call failed for id=%q: %v", id, err)
 		return err
@@ -183,4 +190,29 @@ func toTimePtr(ts *pb.Timestamp) *time.Time {
 	}
 	t := ts.AsTime()
 	return &t
+}
+
+// ListIDPLinks retrieves all identity provider links for a given user.
+func (c *SDKClient) ListIDPLinks(ctx context.Context, userID string) ([]IDPLink, error) {
+	klog.V(2).Infof("ListIDPLinks: listing IDP links for userID=%q", userID)
+
+	resp, err := c.user.ListIDPLinks(ctx, &userv2.ListIDPLinksRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		klog.Errorf("ListIDPLinks: API call failed for userID=%q: %v", userID, err)
+		return nil, err
+	}
+
+	out := make([]IDPLink, 0, len(resp.GetResult()))
+	for _, link := range resp.GetResult() {
+		out = append(out, IDPLink{
+			IDPID:       link.GetIdpId(),
+			IDPName:     link.GetIdpId(),
+			UserID:      link.GetUserId(),
+			IDPUserName: link.GetUserName(),
+		})
+	}
+	klog.V(2).Infof("ListIDPLinks: found %d IDP link(s) for userID=%q", len(out), userID)
+	return out, nil
 }

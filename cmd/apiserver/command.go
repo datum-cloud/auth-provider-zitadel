@@ -21,6 +21,7 @@ import (
 	openapicommon "k8s.io/kube-openapi/pkg/common"
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 
+	registryidentityproviders "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/identityproviders"
 	registrysessions "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/sessions"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
 	identityinstall "go.miloapis.com/auth-provider-zitadel/pkg/apis/identity"
@@ -119,7 +120,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 				return base
 			}
 			cfg.OpenAPIConfig = genericserver.DefaultOpenAPIConfig(getOpenAPIDefinitions, openapi.NewDefinitionNamer(scheme))
-			cfg.OpenAPIConfig.Info.Title = "Milo Sessions API"
+			cfg.OpenAPIConfig.Info.Title = "Milo Identity API"
 			cfg.OpenAPIConfig.Info.Version = "v1alpha1"
 			cfg.OpenAPIV3Config = genericserver.DefaultOpenAPIV3Config(getOpenAPIDefinitions, openapi.NewDefinitionNamer(scheme))
 
@@ -139,7 +140,10 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 				return fmt.Errorf("init zitadel sdk: %w", err)
 			}
 
-			storage := map[string]rest.Storage{"sessions": &registrysessions.REST{Z: zc}}
+			storage := map[string]rest.Storage{
+				"sessions":          &registrysessions.REST{Z: zc},
+				"identityproviders": &registryidentityproviders.REST{Z: zc},
+			}
 
 			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.SchemeGroupVersion.Group, scheme, metav1.ParameterCodec, codecs)
 			agi.VersionedResourcesStorageMap = map[string]map[string]rest.Storage{"v1alpha1": storage}
