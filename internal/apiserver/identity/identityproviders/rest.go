@@ -28,12 +28,12 @@ var _ rest.TableConvertor = &REST{}
 var _ rest.Storage = &REST{}
 var _ rest.SingularNameProvider = &REST{}
 
-var identityProvidersGR = schema.GroupResource{Group: milov1alpha1.SchemeGroupVersion.Group, Resource: "identityproviders"}
+var userIdentitiesGR = schema.GroupResource{Group: milov1alpha1.SchemeGroupVersion.Group, Resource: "useridentities"}
 
 func (r *REST) NamespaceScoped() bool   { return false }
-func (r *REST) New() runtime.Object     { return &milov1alpha1.IdentityProvider{} }
-func (r *REST) NewList() runtime.Object { return &milov1alpha1.IdentityProviderList{} }
-func (r *REST) GetSingularName() string { return "identityprovider" }
+func (r *REST) New() runtime.Object     { return &milov1alpha1.UserIdentity{} }
+func (r *REST) NewList() runtime.Object { return &milov1alpha1.UserIdentityList{} }
+func (r *REST) GetSingularName() string { return "useridentity" }
 
 func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.Object, error) {
 	u, ok := request.UserFrom(ctx)
@@ -50,18 +50,18 @@ func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.O
 		return nil, translateErr(err, "")
 	}
 
-	out := &milov1alpha1.IdentityProviderList{
-		TypeMeta: metav1.TypeMeta{Kind: "IdentityProviderList", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
+	out := &milov1alpha1.UserIdentityList{
+		TypeMeta: metav1.TypeMeta{Kind: "UserIdentityList", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
 	}
 
 	for _, link := range idpLinks {
-		out.Items = append(out.Items, milov1alpha1.IdentityProvider{
-			TypeMeta: metav1.TypeMeta{Kind: "IdentityProvider", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
+		out.Items = append(out.Items, milov1alpha1.UserIdentity{
+			TypeMeta: metav1.TypeMeta{Kind: "UserIdentity", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              link.IDPID,
 				CreationTimestamp: metav1.Now(),
 			},
-			Status: milov1alpha1.IdentityProviderStatus{
+			Status: milov1alpha1.UserIdentityStatus{
 				UserUID:      uid,
 				ProviderID:   link.IDPID,
 				ProviderName: link.IDPName,
@@ -91,10 +91,10 @@ func (r *REST) Get(ctx context.Context, name string, _ *metav1.GetOptions) (runt
 	for _, link := range idpLinks {
 		if link.IDPID == name {
 			klog.V(3).InfoS("Found identity provider", "name", name, "uid", uid)
-			return &milov1alpha1.IdentityProvider{
-				TypeMeta:   metav1.TypeMeta{Kind: "IdentityProvider", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
+			return &milov1alpha1.UserIdentity{
+				TypeMeta:   metav1.TypeMeta{Kind: "UserIdentity", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
 				ObjectMeta: metav1.ObjectMeta{Name: link.IDPID},
-				Status: milov1alpha1.IdentityProviderStatus{
+				Status: milov1alpha1.UserIdentityStatus{
 					UserUID:      uid,
 					ProviderID:   link.IDPID,
 					ProviderName: link.IDPName,
@@ -105,16 +105,16 @@ func (r *REST) Get(ctx context.Context, name string, _ *metav1.GetOptions) (runt
 	}
 
 	klog.V(1).InfoS("Identity provider not found", "name", name, "uid", uid)
-	return nil, apierrors.NewNotFound(identityProvidersGR, name)
+	return nil, apierrors.NewNotFound(userIdentitiesGR, name)
 }
 
 func translateErr(err error, name string) error {
 	if st, ok := status.FromError(err); ok {
 		switch st.Code() {
 		case codes.NotFound:
-			return apierrors.NewNotFound(identityProvidersGR, name)
+			return apierrors.NewNotFound(userIdentitiesGR, name)
 		case codes.PermissionDenied:
-			return apierrors.NewForbidden(identityProvidersGR, name, nil)
+			return apierrors.NewForbidden(userIdentitiesGR, name, nil)
 		case codes.Unauthenticated:
 			return apierrors.NewUnauthorized("unauthenticated")
 		case codes.DeadlineExceeded, codes.Unavailable:
@@ -127,7 +127,7 @@ func translateErr(err error, name string) error {
 }
 
 func (r *REST) ConvertToTable(ctx context.Context, obj runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
-	return rest.NewDefaultTableConvertor(identityProvidersGR).ConvertToTable(ctx, obj, tableOptions)
+	return rest.NewDefaultTableConvertor(userIdentitiesGR).ConvertToTable(ctx, obj, tableOptions)
 }
 
 func (r *REST) Destroy() {}
