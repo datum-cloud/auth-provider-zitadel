@@ -50,7 +50,7 @@ var _ = Describe("Identity API", Label("identity-api"), func() {
 			cmd := exec.Command("kubectl", "api-resources", "--api-group=identity.miloapis.com")
 			output, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to list API resources")
-			Expect(string(output)).To(ContainSubstring("sessions"),
+			Expect(output).To(ContainSubstring("sessions"),
 				"sessions resource should be registered in identity.miloapis.com API group")
 		})
 
@@ -109,10 +109,9 @@ var _ = Describe("Identity API", Label("identity-api"), func() {
 			output, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
-			outputStr := string(output)
-			Expect(outputStr).To(ContainSubstring("sessions"))
-			Expect(outputStr).To(ContainSubstring("identity.miloapis.com/v1alpha1"))
-			Expect(outputStr).To(ContainSubstring("session"),
+			Expect(output).To(ContainSubstring("sessions"))
+			Expect(output).To(ContainSubstring("identity.miloapis.com/v1alpha1"))
+			Expect(output).To(ContainSubstring("session"),
 				"Should have singular name 'session'")
 		})
 	})
@@ -123,7 +122,7 @@ var _ = Describe("Identity API", Label("identity-api"), func() {
 			cmd := exec.Command("kubectl", "api-resources", "--api-group=identity.miloapis.com")
 			output, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to list API resources")
-			Expect(string(output)).To(ContainSubstring("useridentities"),
+			Expect(output).To(ContainSubstring("useridentities"),
 				"useridentities resource should be registered in identity.miloapis.com API group")
 		})
 
@@ -191,10 +190,9 @@ var _ = Describe("Identity API", Label("identity-api"), func() {
 			output, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
-			outputStr := string(output)
-			Expect(outputStr).To(ContainSubstring("useridentities"))
-			Expect(outputStr).To(ContainSubstring("identity.miloapis.com/v1alpha1"))
-			Expect(outputStr).To(ContainSubstring("useridentity"),
+			Expect(output).To(ContainSubstring("useridentities"))
+			Expect(output).To(ContainSubstring("identity.miloapis.com/v1alpha1"))
+			Expect(output).To(ContainSubstring("useridentity"),
 				"Should have singular name 'useridentity'")
 		})
 	})
@@ -206,10 +204,9 @@ var _ = Describe("Identity API", Label("identity-api"), func() {
 			output, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
-			outputStr := string(output)
-			Expect(outputStr).To(ContainSubstring("sessions"),
+			Expect(output).To(ContainSubstring("sessions"),
 				"sessions should be in identity.miloapis.com")
-			Expect(outputStr).To(ContainSubstring("useridentities"),
+			Expect(output).To(ContainSubstring("useridentities"),
 				"useridentities should be in identity.miloapis.com")
 		})
 
