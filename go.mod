@@ -12,7 +12,7 @@ require (
 	github.com/zitadel/zitadel v1.80.0-v2.20.0.20250619094244-3a4298c1794a
 	github.com/zitadel/zitadel-go/v3 v3.13.0
 	go.miloapis.com/milo v0.15.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.1
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.16.0
 	google.golang.org/grpc v1.74.2
