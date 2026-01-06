@@ -19,6 +19,10 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
 
+# DOCKER_COMPOSE defines the docker compose command to use.
+# Try docker compose (v2) first, fall back to docker-compose (v1)
+DOCKER_COMPOSE ?= $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
@@ -79,17 +83,17 @@ test-chainsaw: chainsaw ## Run chainsaw tests directly without setup.
 .PHONY: test-e2e
 test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel via docker-compose.
 	@echo "Cleaning up any existing docker-compose setup..."
-	@docker-compose down -v --remove-orphans 2>/dev/null || true
+	@$(DOCKER_COMPOSE) down -v --remove-orphans 2>/dev/null || true
 	@echo "Starting Zitadel via docker-compose..."
-	@docker-compose up -d
+	@$(DOCKER_COMPOSE) up -d
 	@echo "Waiting for Zitadel to be ready..."
 	@start_time=$$(date +%s); \
 	while ! curl -f http://localhost:8080/debug/ready >/dev/null 2>&1; do \
 		duration=$$(( $$(date +%s) - $$start_time )); \
 		if [ $$duration -ge 600 ]; then \
 			echo "Zitadel failed to start within 600 seconds"; \
-			docker-compose logs; \
-			docker-compose down -v; \
+			$(DOCKER_COMPOSE) logs; \
+			$(DOCKER_COMPOSE) down -v; \
 			exit 1; \
 		fi; \
 		sleep 2; \
@@ -98,18 +102,18 @@ test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel 
 	@kubectl cluster-info || { echo "ERROR: kubectl not connected to a cluster"; exit 1; }
 	@$(MAKE) install-external-crds || { \
 		echo "ERROR: Failed to install external CRDs"; \
-		docker-compose down -v; \
+		$(DOCKER_COMPOSE) down -v; \
 		exit 1; \
 	}
 	@echo "Generating Zitadel token..."
 	@ZITADEL_TOKEN=$$($(MAKE) zitadel-token 2>/dev/null | tail -n 1) || { \
 		echo "ERROR: Failed to generate Zitadel token"; \
-		docker-compose down -v; \
+		$(DOCKER_COMPOSE) down -v; \
 		exit 1; \
 	}; \
 	if [ -z "$$ZITADEL_TOKEN" ]; then \
 		echo "ERROR: Empty Zitadel token generated"; \
-		docker-compose down -v; \
+		$(DOCKER_COMPOSE) down -v; \
 		exit 1; \
 	fi; \
 	export ZITADEL_DOMAIN=http://localhost:8080; \
@@ -128,7 +132,7 @@ test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel 
 	sleep 10; \
 	if ! kill -0 $$CONTROLLER_PID 2>/dev/null; then \
 		echo "ERROR: Controller process died. See $$LOG_FILE for details"; \
-		docker-compose down -v; \
+		$(DOCKER_COMPOSE) down -v; \
 		exit 1; \
 	fi; \
 	echo "Running chainsaw tests..."; \
@@ -137,7 +141,7 @@ test-e2e: manifests generate fmt vet chainsaw ## Run the e2e tests with Zitadel 
 	kill $$KILL_TARGET 2>/dev/null || true; \
 	echo "Controller logs saved at $$LOG_FILE"; \
 	echo "Stopping docker-compose..."; \
-	docker-compose down -v; \
+	$(DOCKER_COMPOSE) down -v; \
 	echo "Cleaning up external CRDs..."; \
 	$(MAKE) uninstall-external-crds; \
 	exit $${TEST_EXIT_CODE:-0}

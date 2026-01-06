@@ -16,6 +16,13 @@ tasks:
     cmds:
       - mkdir -p "{{.CERTS_DIR}}" && openssl req -x509 -nodes -newkey rsa:4096 -keyout "{{.CERTS_DIR}}/server.key" -out "{{.CERTS_DIR}}/server.crt" -days 1024 -subj "/CN=webhook.zitadel.svc" -sha256
 
+  lint-ci:
+    desc: Run golangci-lint using Docker (matches CI environment)
+    cmds:
+      - |
+        GOLANGCI_VERSION=$(cat .golangci-version)
+        docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:${GOLANGCI_VERSION} golangci-lint run -v
+
   run-webhookserver:
     desc: Run the user authentication webhook server locally
     deps:
