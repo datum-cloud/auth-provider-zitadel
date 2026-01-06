@@ -24,6 +24,7 @@ jobs:
     uses: datum-cloud/actions/.github/workflows/validate-kustomize.yaml@v1.9.0
 
   publish-container-image:
+    needs: validate-kustomize
     permissions:
       id-token: write
       contents: read
