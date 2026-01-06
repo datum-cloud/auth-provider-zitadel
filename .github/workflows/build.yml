@@ -4,14 +4,10 @@ on:
   push:
     paths-ignore:
       - "README.md"
-      - "env.example"
-      - ".vscode/**"
       
   pull_request:
     paths-ignore:
       - "README.md"
-      - "env.example"
-      - ".vscode/**"
 
   release:
     types: [published]
