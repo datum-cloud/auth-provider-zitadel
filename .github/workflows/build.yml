@@ -2,7 +2,19 @@ name: Build and Push Docker Image
 
 on:
   push:
+    paths-ignore:
+      - "README.md"
+      - "env.example"
+      - ".vscode/**"
+      
   pull_request:
+    paths-ignore:
+      - "README.md"
+      - "env.example"
+      - ".vscode/**"
+
+  release:
+    types: [published]
 
 jobs:
   publish-container-image:
@@ -10,18 +22,22 @@ jobs:
       id-token: write
       contents: read
       packages: write
-    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.5.1
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.9.0
     with:
       image-name: auth-provider-zitadel
     secrets: inherit
 
   publish-kustomize-bundles:
+    needs: publish-container-image
     permissions:
       id-token: write
       contents: read
       packages: write
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.5.1
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.9.0
     with:
       bundle-name: ghcr.io/datum-cloud/auth-provider-zitadel-kustomize
       bundle-path: config
+      image-overlays: config/base
+      image-name: ghcr.io/datum-cloud/auth-provider-zitadel
+      debug: true
     secrets: inherit
