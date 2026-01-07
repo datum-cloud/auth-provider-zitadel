@@ -1,4 +1,4 @@
-package identityproviders
+package useridentities
 
 import (
 	"context"

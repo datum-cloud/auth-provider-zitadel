@@ -21,8 +21,8 @@ import (
 	openapicommon "k8s.io/kube-openapi/pkg/common"
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 
-	registryidentityproviders "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/identityproviders"
 	registrysessions "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/sessions"
+	registryuseridentities "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/useridentities"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
 	identityinstall "go.miloapis.com/auth-provider-zitadel/pkg/apis/identity"
 	"go.miloapis.com/auth-provider-zitadel/pkg/zitadel"
@@ -141,8 +141,8 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			}
 
 			storage := map[string]rest.Storage{
-				"sessions":          &registrysessions.REST{Z: zc},
-				"identityproviders": &registryidentityproviders.REST{Z: zc},
+				"sessions":       &registrysessions.REST{Z: zc},
+				"useridentities": &registryuseridentities.REST{Z: zc},
 			}
 
 			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.SchemeGroupVersion.Group, scheme, metav1.ParameterCodec, codecs)
