@@ -9,6 +9,7 @@ import (
 
 	"github.com/zitadel/oidc/v3/pkg/client/profile"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
+	idpv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/idp/v2"
 	sessionv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/session/v2"
 	userv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
@@ -31,6 +32,7 @@ type SDKConfig struct {
 type SDKClient struct {
 	sess sessionv2.SessionServiceClient
 	user userv2.UserServiceClient
+	idp  idpv2.IdentityProviderServiceClient
 }
 
 // NewSDK builds a client bound to the SessionService v2.
@@ -101,10 +103,11 @@ func NewSDK(ctx context.Context, cfg SDKConfig) (*SDKClient, error) {
 		return nil, err
 	}
 
-	klog.V(2).Info("NewSDK: SessionServiceV2 and UserServiceV2 clients ready")
+	klog.V(2).Info("NewSDK: SessionServiceV2, UserServiceV2, and IdpServiceV2 clients ready")
 	return &SDKClient{
 		sess: cl.SessionServiceV2(),
 		user: cl.UserServiceV2(),
+		idp:  cl.IdpServiceV2(),
 	}, nil
 }
 
@@ -206,9 +209,23 @@ func (c *SDKClient) ListIDPLinks(ctx context.Context, userID string) ([]IDPLink,
 
 	out := make([]IDPLink, 0, len(resp.GetResult()))
 	for _, link := range resp.GetResult() {
+		idpID := link.GetIdpId()
+		idpName := idpID // fallback to ID if GetIDPByID fails
+
+		// Fetch the actual provider name from Zitadel
+		idpResp, err := c.idp.GetIDPByID(ctx, &idpv2.GetIDPByIDRequest{
+			Id: idpID,
+		})
+		if err != nil {
+			klog.Warningf("ListIDPLinks: failed to get IDP name for ID %q: %v (using ID as fallback)", idpID, err)
+		} else if idpResp != nil && idpResp.Idp != nil {
+			idpName = idpResp.Idp.GetName()
+			klog.V(3).Infof("ListIDPLinks: resolved IDP ID %q to name %q", idpID, idpName)
+		}
+
 		out = append(out, IDPLink{
-			IDPID:       link.GetIdpId(),
-			IDPName:     link.GetIdpId(),
+			IDPID:       idpID,
+			IDPName:     idpName,
 			UserID:      link.GetUserId(),
 			IDPUserName: link.GetUserName(),
 		})
