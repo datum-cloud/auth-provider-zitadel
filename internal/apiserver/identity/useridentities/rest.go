@@ -196,9 +196,9 @@ func isStaffUser(u user.Info) bool {
 	groups := u.GetGroups()
 	for _, group := range groups {
 		// Check for staff/admin group membership
-		// Common patterns: system:masters, staff, admin, etc.
+		// Groups are configured in Zitadel and passed via JWT claims
 		switch group {
-		case "system:masters", "staff", "admin", "datum:staff":
+		case "staff-users", "fraud-manager", "system:masters":
 			return true
 		}
 	}
