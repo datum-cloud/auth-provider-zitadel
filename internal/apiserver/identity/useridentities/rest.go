@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/klog/v2"
@@ -49,8 +50,23 @@ func (r *REST) List(ctx context.Context, options *metainternal.ListOptions) (run
 	var uid string
 	if options != nil && options.FieldSelector != nil {
 		if targetUID, err := extractUserUIDFromFieldSelector(options.FieldSelector); err == nil && targetUID != "" {
+			// Field selector specifies a target user
+			// Check if the user is authorized to query other users' data
+			if targetUID != u.GetUID() {
+				// User is trying to query another user's identities
+				// Only staff/admin users are allowed to do this
+				if !isStaffUser(u) {
+					klog.V(2).InfoS("Unauthorized: non-staff user attempting to query other user's identities",
+						"requestor", u.GetUID(), "targetUID", targetUID, "groups", u.GetGroups())
+					return nil, apierrors.NewForbidden(
+						userIdentitiesGR,
+						"",
+						fmt.Errorf("only staff users can query other users' identities"))
+				}
+				klog.V(2).InfoS("Staff user querying other user's identities",
+					"requestor", u.GetUID(), "targetUID", targetUID, "groups", u.GetGroups())
+			}
 			uid = targetUID
-			klog.V(2).InfoS("Listing identity providers for target user", "requestor", u.GetUID(), "targetUID", uid)
 		} else {
 			// No valid userUID in field selector, use authenticated user's UID
 			uid = u.GetUID()
@@ -168,4 +184,24 @@ func extractUserUIDFromFieldSelector(selector fields.Selector) (string, error) {
 	}
 
 	return "", fmt.Errorf("userUID not found in field selector")
+}
+
+// isStaffUser checks if the authenticated user has staff/admin privileges.
+// Staff users are identified by membership in specific groups.
+func isStaffUser(u user.Info) bool {
+	if u == nil {
+		return false
+	}
+
+	groups := u.GetGroups()
+	for _, group := range groups {
+		// Check for staff/admin group membership
+		// Common patterns: system:masters, staff, admin, etc.
+		switch group {
+		case "system:masters", "staff", "admin", "datum:staff":
+			return true
+		}
+	}
+
+	return false
 }
