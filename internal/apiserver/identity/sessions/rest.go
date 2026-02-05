@@ -3,14 +3,17 @@ package sessions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/klog/v2"
@@ -39,14 +42,45 @@ func (r *REST) New() runtime.Object     { return &milov1alpha1.Session{} }
 func (r *REST) NewList() runtime.Object { return &milov1alpha1.SessionList{} }
 func (r *REST) GetSingularName() string { return "session" }
 
-func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.Object, error) {
+func (r *REST) List(ctx context.Context, options *metainternal.ListOptions) (runtime.Object, error) {
 	u, ok := request.UserFrom(ctx)
 	if !ok {
 		klog.ErrorS(nil, "No user in context for List")
 		return nil, apierrors.NewUnauthorized("no user in context")
 	}
-	uid := u.GetUID()
-	klog.V(2).InfoS("Listing sessions for user", "uid", uid)
+
+	// Extract target userUID from field selector if present
+	// This allows staff users to query other users' sessions
+	var uid string
+	if options != nil && options.FieldSelector != nil {
+		if targetUID, err := extractUserUIDFromFieldSelector(options.FieldSelector); err == nil && targetUID != "" {
+			// Field selector specifies a target user
+			// Check if the user is authorized to query other users' data
+			if targetUID != u.GetUID() {
+				// User is trying to query another user's sessions
+				// Only staff/admin users are allowed to do this
+				if !isStaffUser(u) {
+					klog.V(2).InfoS("Unauthorized: non-staff user attempting to query other user's sessions",
+						"requestor", u.GetUID(), "targetUID", targetUID, "groups", u.GetGroups())
+					return nil, apierrors.NewForbidden(
+						sessionsGR,
+						"",
+						fmt.Errorf("only staff users can query other users' sessions"))
+				}
+				klog.V(2).InfoS("Staff user querying other user's sessions",
+					"requestor", u.GetUID(), "targetUID", targetUID, "groups", u.GetGroups())
+			}
+			uid = targetUID
+		} else {
+			// No valid userUID in field selector, use authenticated user's UID
+			uid = u.GetUID()
+			klog.V(2).InfoS("Listing sessions for authenticated user", "uid", uid)
+		}
+	} else {
+		// No field selector, use authenticated user's UID (default behavior)
+		uid = u.GetUID()
+		klog.V(2).InfoS("Listing sessions for authenticated user", "uid", uid)
+	}
 	zs, err := r.Z.ListSessions(ctx, uid)
 	if err != nil {
 		klog.ErrorS(err, "Failed to list sessions", "uid", uid)
@@ -158,3 +192,43 @@ func (r *REST) ConvertToTable(ctx context.Context, obj runtime.Object, tableOpti
 
 // Destroy satisfies rest.Storage.
 func (r *REST) Destroy() {}
+
+// extractUserUIDFromFieldSelector extracts the userUID value from a field selector.
+// Supports field selector syntax: "status.userUID=<uid>" or "userUID=<uid>"
+func extractUserUIDFromFieldSelector(selector fields.Selector) (string, error) {
+	if selector == nil || selector.Empty() {
+		return "", fmt.Errorf("empty field selector")
+	}
+
+	// Try to match "status.userUID=<value>"
+	if req, found := selector.RequiresExactMatch("status.userUID"); found {
+		return req, nil
+	}
+
+	// Try to match "userUID=<value>" (alternative syntax)
+	if req, found := selector.RequiresExactMatch("userUID"); found {
+		return req, nil
+	}
+
+	return "", fmt.Errorf("userUID not found in field selector")
+}
+
+// isStaffUser checks if the authenticated user has staff/admin privileges.
+// Staff users are identified by membership in specific groups.
+func isStaffUser(u user.Info) bool {
+	if u == nil {
+		return false
+	}
+
+	groups := u.GetGroups()
+	for _, group := range groups {
+		// Check for staff/admin group membership
+		// Groups are configured in Zitadel and passed via JWT claims
+		switch group {
+		case "staff-users", "fraud-manager", "system:masters":
+			return true
+		}
+	}
+
+	return false
+}
