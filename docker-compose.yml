@@ -2,7 +2,7 @@ services:
   zitadel:
     # The user should have the permission to write to ./machinekey
     user: "${UID:-1000}"
-    restart: 'always'
+    restart: 'on-failure:3'
     networks:
       - 'zitadel'
     image: 'ghcr.io/zitadel/zitadel:v3.3.0'
