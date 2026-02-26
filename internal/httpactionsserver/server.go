@@ -389,6 +389,15 @@ func (s *Server) idpIntentSucceededHandler(w http.ResponseWriter, r *http.Reques
 	current.Status.AvatarURL = avatarURL
 	current.Status.LastLoginProvider = idpProvider
 
+	// Initialize LastLoginPerProvider map if it doesn't exist
+	if current.Status.LastLoginPerProvider == nil {
+		current.Status.LastLoginPerProvider = make(map[string]string)
+	}
+
+	// Update the last login timestamp for this specific provider
+	// Using RFC3339 format for the timestamp
+	current.Status.LastLoginPerProvider[string(idpProvider)] = metav1.Now().Format("2006-01-02T15:04:05Z07:00")
+
 	fieldManagerName := "idp-intent-succeeded"
 	if err := s.k8sClient.Status().Patch(ctx, current, client.MergeFrom(original), client.FieldOwner(fieldManagerName)); err != nil {
 		log.Error(err, "Failed to patch User status")
@@ -396,7 +405,7 @@ func (s *Server) idpIntentSucceededHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	log.Info("Processed idpintent.succeeded", "idpProvider", idpProvider, "avatarURL", avatarURL, "userId", req.EventPayload.UserID)
+	log.Info("Processed idpintent.succeeded", "idpProvider", idpProvider, "avatarURL", avatarURL, "userId", req.EventPayload.UserID, "loginTimestamp", current.Status.LastLoginPerProvider[string(idpProvider)])
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("success"))
 }
