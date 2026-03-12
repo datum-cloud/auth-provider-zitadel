@@ -18,6 +18,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	localIdentityProviderID   = "zitadel-local"
+	localIdentityProviderName = "Email"
+)
+
 type SDKConfig struct {
 	// Domain is the ZITADEL gRPC/management host (host only, no scheme or path),
 	// e.g. "auth.example.com".
@@ -230,6 +235,56 @@ func (c *SDKClient) ListIDPLinks(ctx context.Context, userID string) ([]IDPLink,
 			IDPUserName: link.GetUserName(),
 		})
 	}
+
+	if len(out) == 0 {
+		localIdentity, err := c.getLocalIdentityLink(ctx, userID)
+		if err != nil {
+			klog.Errorf("ListIDPLinks: failed to build local identity fallback for userID=%q: %v", userID, err)
+			return nil, err
+		}
+		if localIdentity != nil {
+			out = append(out, *localIdentity)
+		}
+	}
 	klog.V(2).Infof("ListIDPLinks: found %d IDP link(s) for userID=%q", len(out), userID)
 	return out, nil
+}
+
+func (c *SDKClient) getLocalIdentityLink(ctx context.Context, userID string) (*IDPLink, error) {
+	resp, err := c.user.GetUserByID(ctx, &userv2.GetUserByIDRequest{UserId: userID})
+	if err != nil {
+		return nil, err
+	}
+
+	user := resp.GetUser()
+	if user == nil {
+		return nil, nil
+	}
+
+	username := localIdentityUsername(user)
+	if username == "" {
+		return nil, nil
+	}
+
+	return &IDPLink{
+		IDPID:       localIdentityProviderID,
+		IDPName:     localIdentityProviderName,
+		UserID:      user.GetUserId(),
+		IDPUserName: username,
+	}, nil
+}
+
+func localIdentityUsername(user *userv2.User) string {
+	if user == nil {
+		return ""
+	}
+	if preferred := strings.TrimSpace(user.GetPreferredLoginName()); preferred != "" {
+		return preferred
+	}
+	for _, loginName := range user.GetLoginNames() {
+		if loginName = strings.TrimSpace(loginName); loginName != "" {
+			return loginName
+		}
+	}
+	return strings.TrimSpace(user.GetUsername())
 }
