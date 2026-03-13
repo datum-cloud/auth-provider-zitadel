@@ -7,6 +7,7 @@ import (
 	"go.miloapis.com/auth-provider-zitadel/pkg/token"
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -58,6 +59,20 @@ func NewAuthenticationWebhookV1(introspector *token.Introspector, kubeClient cli
 				}
 				log.Error(err, "Failed to fetch User resource", "user", sub)
 				return Denied(fmt.Sprintf("failed to fetch user resource: %v", err))
+			}
+
+			// Update LastTokenIntrospection timestamp to track token usage
+			// This happens on every successful token validation, including token refreshes
+			original := userObj.DeepCopy()
+			now := metav1.Now()
+			userObj.Status.LastTokenIntrospection = &now
+
+			fieldManagerName := "authentication-webhook"
+			if err := kubeClient.Status().Patch(ctx, userObj, client.MergeFrom(original), client.FieldOwner(fieldManagerName)); err != nil {
+				// Log the error but don't fail authentication - this is a non-critical update
+				log.Error(err, "Failed to update LastTokenIntrospection timestamp", "user", sub)
+			} else {
+				log.V(1).Info("Updated LastTokenIntrospection timestamp", "user", sub, "timestamp", now.Format("2006-01-02T15:04:05Z07:00"))
 			}
 
 			return Allowed(username, sub, userObj.Status.RegistrationApproval)
