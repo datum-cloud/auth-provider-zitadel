@@ -1,10 +1,13 @@
 package webhookserver
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/zitadel/oidc/v3/pkg/client/profile"
+	internalzitadel "go.miloapis.com/auth-provider-zitadel/internal/zitadel"
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -80,6 +83,18 @@ func runWebhookServer(cmd *cobra.Command, cfg *config.WebhookServerConfig) error
 	}
 	log.Info("Successfully created token introspector")
 
+	zitadelTokenSource, err := profile.NewJWTProfileTokenSourceFromKeyFile(
+		context.Background(),
+		cfg.ZitadelDomain,
+		cfg.ZitadelPrivateKey,
+		[]string{"urn:zitadel:iam:org:project:id:zitadel:aud"},
+	)
+	if err != nil {
+		log.Error(err, "Failed to create Zitadel API token source")
+		return fmt.Errorf("failed to create Zitadel API token source: %w", err)
+	}
+	zitadelClient := internalzitadel.NewClientWithTokenSource(cfg.ZitadelDomain, zitadelTokenSource)
+
 	// Setup Kubernetes client config
 	restConfig, err := k8sconfig.GetConfig()
 	if err != nil {
@@ -114,7 +129,7 @@ func runWebhookServer(cmd *cobra.Command, cfg *config.WebhookServerConfig) error
 	log.Info("Setting up webhook server")
 	hookServer := mgr.GetWebhookServer()
 
-	webhookv1 := webhook.NewAuthenticationWebhookV1(introspector, mgr.GetClient())
+	webhookv1 := webhook.NewAuthenticationWebhookV1(introspector, mgr.GetClient(), zitadelClient)
 	hookServer.Register(webhookv1.Endpoint, webhookv1)
 
 	log.Info("Starting manager")
