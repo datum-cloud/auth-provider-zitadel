@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -13,16 +14,27 @@ import (
 	"testing"
 	"time"
 
+	internalzitadel "go.miloapis.com/auth-provider-zitadel/internal/zitadel"
+	"go.miloapis.com/auth-provider-zitadel/pkg/token"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
-
-	"go.miloapis.com/auth-provider-zitadel/pkg/token"
 )
+
+type fakeZitadelUserGetter struct {
+	response *internalzitadel.GetUserResponse
+	err      error
+}
+
+func (f *fakeZitadelUserGetter) GetUser(_ context.Context, _ string) (*internalzitadel.GetUserResponse, error) {
+	return f.response, f.err
+}
 
 // generateCredentialsFile creates a temporary Zitadel credentials JSON file that
 // contains a randomly-generated RSA private key. It returns the full path to
@@ -77,7 +89,7 @@ func generateCredentialsFile(t *testing.T) string {
 // buildTestHandler returns the HTTP handler under test along with the
 // underlying introspection test server so that the caller can control the
 // server's behaviour.
-func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]any, kubeObjs ...client.Object) (http.Handler, *httptest.Server) {
+func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]any, zitadelClient zitadelUserGetter, kubeObjs ...client.Object) (http.Handler, client.Client, *httptest.Server) {
 	t.Helper()
 
 	// Create a fake Zitadel introspection endpoint.
@@ -106,10 +118,10 @@ func buildTestHandler(t *testing.T, responseStatus int, responseBody map[string]
 	if err := iammiloapiscomv1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add iam scheme: %v", err)
 	}
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(kubeObjs...).Build()
 
-	handler := NewAuthenticationWebhookV1(introspector, fakeClient)
-	return handler, introspectionSrv
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(kubeObjs...).Build()
+	handler := NewAuthenticationWebhookV1(introspector, fakeClient, zitadelClient)
+	return handler, fakeClient, introspectionSrv
 }
 
 func TestHttpTokenAuthenticationWebhook(t *testing.T) {
@@ -121,8 +133,12 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 		name                 string
 		method               string
 		token                string
+		precreateUser        bool
 		introspectionStatus  int
 		introspectionPayload map[string]any
+		zitadelResponse      *internalzitadel.GetUserResponse
+		zitadelErr           error
+		expectCreatedUser    *iammiloapiscomv1alpha1.UserSpec
 		expectHTTPCode       int
 		expectAuthenticated  bool
 		expectExtraApproval  bool
@@ -132,15 +148,13 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 		{
 			name:           "method not allowed",
 			method:         http.MethodGet,
-			token:          "",
 			expectHTTPCode: http.StatusMethodNotAllowed,
 		},
 		{
 			name:                 "empty token provided",
 			method:               http.MethodPost,
-			token:                "", // empty token
 			introspectionStatus:  http.StatusOK,
-			introspectionPayload: map[string]any{"active": false}, // will not be used
+			introspectionPayload: map[string]any{"active": false},
 			expectHTTPCode:       http.StatusOK,
 			expectAuthenticated:  false,
 			expectErrorSubstring: "empty token provided",
@@ -169,6 +183,7 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			name:                 "human user token active",
 			method:               http.MethodPost,
 			token:                validToken,
+			precreateUser:        true,
 			introspectionStatus:  http.StatusOK,
 			introspectionPayload: map[string]any{"active": true, "sub": "my-user", "email": "user@example.com"},
 			expectHTTPCode:       http.StatusOK,
@@ -180,12 +195,82 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 			name:                 "machine user token active",
 			method:               http.MethodPost,
 			token:                validToken,
+			precreateUser:        true,
 			introspectionStatus:  http.StatusOK,
 			introspectionPayload: map[string]any{"active": true, "sub": "machine-user", "username": "machine-user@example.com"},
 			expectHTTPCode:       http.StatusOK,
 			expectAuthenticated:  true,
 			expectExtraApproval:  true,
 			expectExtraValue:     string(iammiloapiscomv1alpha1.RegistrationApprovalStateApproved),
+		},
+		{
+			name:                "missing milo user self-heals from zitadel human",
+			method:              http.MethodPost,
+			token:               validToken,
+			introspectionStatus: http.StatusOK,
+			introspectionPayload: map[string]any{
+				"active": true,
+				"sub":    "recovered-user",
+				"email":  "recovered@example.com",
+			},
+			zitadelResponse: &internalzitadel.GetUserResponse{
+				User: internalzitadel.User{
+					UserID: "recovered-user",
+					Human: &internalzitadel.HumanUserData{
+						Profile: &internalzitadel.HumanProfile{
+							GivenName:  "Recover",
+							FamilyName: "User",
+						},
+						Email: &internalzitadel.HumanEmail{
+							Email: "recovered@example.com",
+						},
+					},
+				},
+			},
+			expectCreatedUser: &iammiloapiscomv1alpha1.UserSpec{
+				Email:      "recovered@example.com",
+				GivenName:  "Recover",
+				FamilyName: "User",
+			},
+			expectHTTPCode:      http.StatusOK,
+			expectAuthenticated: true,
+			expectExtraApproval: true,
+			expectExtraValue:    string(iammiloapiscomv1alpha1.RegistrationApprovalStatePending),
+		},
+		{
+			name:                "missing milo user denied when zitadel user missing",
+			method:              http.MethodPost,
+			token:               validToken,
+			introspectionStatus: http.StatusOK,
+			introspectionPayload: map[string]any{
+				"active": true,
+				"sub":    "missing-user",
+				"email":  "missing@example.com",
+			},
+			zitadelErr:           apierrors.NewNotFound(schema.GroupResource{Group: "zitadel", Resource: "users"}, "missing-user"),
+			expectHTTPCode:       http.StatusOK,
+			expectAuthenticated:  false,
+			expectErrorSubstring: "user resource not found",
+		},
+		{
+			name:                "missing milo user denied when zitadel user is machine",
+			method:              http.MethodPost,
+			token:               validToken,
+			introspectionStatus: http.StatusOK,
+			introspectionPayload: map[string]any{
+				"active":   true,
+				"sub":      "machine-user-missing",
+				"username": "machine-user@example.com",
+			},
+			zitadelResponse: &internalzitadel.GetUserResponse{
+				User: internalzitadel.User{
+					UserID:  "machine-user-missing",
+					Machine: &internalzitadel.MachineUserData{},
+				},
+			},
+			expectHTTPCode:       http.StatusOK,
+			expectAuthenticated:  false,
+			expectErrorSubstring: "zitadel user is not a human user",
 		},
 		{
 			name:                 "missing email or username",
@@ -205,9 +290,11 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 
 			// For non-POST test we don't need introspection server.
 			var handler http.Handler
+			var kubeClient client.Client
 			var srv *httptest.Server
+
 			kubeObjs := []client.Object{}
-			if tc.expectAuthenticated {
+			if tc.precreateUser {
 				// create fake User with approved registration
 				if sub, ok := tc.introspectionPayload["sub"].(string); ok {
 					kubeObjs = append(kubeObjs, &iammiloapiscomv1alpha1.User{
@@ -219,7 +306,13 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 					})
 				}
 			}
-			handler, srv = buildTestHandler(t, tc.introspectionStatus, tc.introspectionPayload, kubeObjs...)
+
+			var zitadelClient zitadelUserGetter
+			if tc.zitadelResponse != nil || tc.zitadelErr != nil {
+				zitadelClient = &fakeZitadelUserGetter{response: tc.zitadelResponse, err: tc.zitadelErr}
+			}
+
+			handler, kubeClient, srv = buildTestHandler(t, tc.introspectionStatus, tc.introspectionPayload, zitadelClient, kubeObjs...)
 			defer srv.Close()
 
 			// Build request.
@@ -259,16 +352,12 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 				t.Fatalf("authenticated mismatch: got %v want %v", resp.Status.Authenticated, tc.expectAuthenticated)
 			}
 
-			if tc.expectErrorSubstring != "" {
-				if !bytes.Contains([]byte(resp.Status.Error), []byte(tc.expectErrorSubstring)) {
-					t.Fatalf("expected error to contain %q, got %q", tc.expectErrorSubstring, resp.Status.Error)
-				}
+			if tc.expectErrorSubstring != "" && !bytes.Contains([]byte(resp.Status.Error), []byte(tc.expectErrorSubstring)) {
+				t.Fatalf("expected error to contain %q, got %q", tc.expectErrorSubstring, resp.Status.Error)
 			}
 
-			if tc.expectAuthenticated {
-				if resp.Status.User.Username == "" || resp.Status.User.UID == "" {
-					t.Fatalf("expected user info to be set on success")
-				}
+			if tc.expectAuthenticated && (resp.Status.User.Username == "" || resp.Status.User.UID == "") {
+				t.Fatalf("expected user info to be set on success")
 			}
 
 			if tc.expectExtraApproval {
@@ -278,6 +367,16 @@ func TestHttpTokenAuthenticationWebhook(t *testing.T) {
 				}
 				if len(val) == 0 || val[0] != tc.expectExtraValue {
 					t.Fatalf("unexpected registrationApproval value: %v", val)
+				}
+			}
+
+			if tc.expectCreatedUser != nil {
+				createdUser := &iammiloapiscomv1alpha1.User{}
+				if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: tc.introspectionPayload["sub"].(string)}, createdUser); err != nil {
+					t.Fatalf("expected created user to exist: %v", err)
+				}
+				if createdUser.Spec != *tc.expectCreatedUser {
+					t.Fatalf("unexpected created user spec: got %+v want %+v", createdUser.Spec, *tc.expectCreatedUser)
 				}
 			}
 		})

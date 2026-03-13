@@ -48,7 +48,21 @@ type MachineUserData struct{}
 
 // HumanUserData represents human-specific user data.
 // This can be extended with human-specific fields as needed.
-type HumanUserData struct{}
+type HumanUserData struct {
+	Profile *HumanProfile `json:"profile,omitempty"`
+	Email   *HumanEmail   `json:"email,omitempty"`
+}
+
+// HumanProfile contains the subset of Zitadel human profile fields needed by Milo.
+type HumanProfile struct {
+	GivenName  string `json:"givenName,omitempty"`
+	FamilyName string `json:"familyName,omitempty"`
+}
+
+// HumanEmail contains the subset of Zitadel human email fields needed by Milo.
+type HumanEmail struct {
+	Email string `json:"email,omitempty"`
+}
 
 // GetUser retrieves user information by user ID.
 // It wraps the "GET /v2/users/:userId" REST endpoint.
