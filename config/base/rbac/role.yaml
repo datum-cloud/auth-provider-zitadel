@@ -22,7 +22,7 @@ rules:
   - machineaccounts/finalizers
   - userdeactivations/finalizers
   - userdeactivations/status
-  - users/status
+  - users/finalizers
   verbs:
   - update
 - apiGroups:
@@ -48,6 +48,10 @@ rules:
   - users
   verbs:
   - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - infrastructure.miloapis.com
   resources:

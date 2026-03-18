@@ -106,9 +106,9 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	log := logf.FromContext(ctx).WithName("machineaccount-reconciler")
 	log.Info("Starting reconciliation", "request", req)
 
-	cluster, err := r.mgr.ClusterFromContext(ctx)
+	cluster, err := r.mgr.GetCluster(ctx, req.ClusterName)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get cluster from reconcile context: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster %s from manager: %w", req.ClusterName, err)
 	}
 
 	machineAccount := &iammiloapiscomv1alpha1.MachineAccount{}

@@ -1,0 +1,15 @@
+# controller-manager server config for CI — single-instance mode, no milo discovery
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: controller-manager-config
+  namespace: auth-provider-zitadel-system
+data:
+  controller-manager-config.yaml: |
+    discovery:
+      mode: "single"
+      internalServiceDiscovery: false
+      discoveryKubeconfigPath: ""
+      projectKubeconfigPath: ""
+    downstreamResourceManagement:
+      kubeconfigPath: ""

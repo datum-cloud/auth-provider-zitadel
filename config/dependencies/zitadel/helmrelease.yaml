@@ -1,0 +1,148 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: zitadel
+  namespace: zitadel-system
+spec:
+  chart:
+    spec:
+      chart: zitadel
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: zitadel
+        namespace: zitadel-system
+      version: 9.x
+  install:
+    createNamespace: false
+    timeout: 15m
+    disableWait: true
+    remediation:
+      retries: 0
+  upgrade:
+    timeout: 15m
+    disableWait: true
+    remediation:
+      retries: 0
+  interval: 1m0s
+  releaseName: zitadel
+  targetNamespace: zitadel-system
+  values:
+    image:
+      tag: v4.12.2
+
+    replicaCount: 1
+
+    service:
+      port: 443
+      targetPort: 8080
+
+    login:
+      customConfigmapConfig: |
+        ZITADEL_SERVICE_USER_TOKEN_FILE="/login-client/pat"
+        ZITADEL_API_URL="http://zitadel.zitadel-system.svc.cluster.local:8080"
+
+    setupJob:
+      machinekeyWriter:
+        # Writes the firstInstance machine key to a Kubernetes Secret named
+        # "zitadel-admin-sa" in the zitadel-system namespace.
+        # The secret key is "sa.json" and contains a JSON service account key.
+        enabled: true
+        image:
+          repository: alpine/k8s
+          tag: "1.32.8"
+
+    zitadel:
+      # Use a hardcoded master key for CI. In production this comes from a Secret.
+      masterkey: "MasterkeyNeedsToHave32Characters"
+
+      configmapConfig:
+        ExternalSecure: true
+        ExternalPort: 443
+        ExternalDomain: zitadel.zitadel-system.svc.cluster.local
+        TLS:
+          Enabled: true
+          CertPath: /etc/zitadel/tls/tls.crt
+          KeyPath: /etc/zitadel/tls/tls.key
+
+        # Allow localhost for actions server sidecar (127.0.0.1:8888)
+        # Zitadel v4.11+ has SSRF protection blocking localhost by default.
+        Actions:
+          HTTP:
+            DenyList:
+              - "0.0.0.0"
+              - "::"
+        Executions:
+          DenyList:
+            - "0.0.0.0"
+            - "::"
+
+        Log:
+          Level: info
+          Formatter:
+            Format: json
+
+        Database:
+          Postgres:
+            Host: zitadel-postgresql
+            Port: 5432
+            Database: zitadel
+            MaxOpenConns: 10
+            MaxIdleConns: 5
+            MaxConnLifetime: 30m
+            MaxConnIdleTime: 5m
+            User:
+              Username: zitadel
+              Password: zitadel
+              SSL:
+                Mode: disable
+            Admin:
+              Username: zitadel
+              Password: zitadel
+              SSL:
+                Mode: disable
+
+        # firstInstance creates the iam-admin machine user and exports a JSON
+        # service account key via the machinekeyWriter job.
+        FirstInstance:
+          InstanceName: CI
+          DefaultLanguage: en
+          Org:
+            Name: CI Org
+            Human:
+              UserName: admin@localhost
+              FirstName: Admin
+              LastName: CI
+              PreferredLanguage: en
+              Email:
+                Address: admin@localhost
+                IsVerified: true
+              Password: "Password1!"
+            Machine:
+              Machine:
+                Username: iam-admin
+                Name: IAM Admin
+              MachineKey:
+                # Type 1 = JSON service account key
+                Type: 1
+
+    extraVolumes:
+      - name: zitadel-tls
+        secret:
+          secretName: zitadel-tls
+
+    extraVolumeMounts:
+      - name: zitadel-tls
+        mountPath: /etc/zitadel/tls
+        readOnly: true
+
+    # actions-server sidecar: mirrors the production pattern from datum-infra.
+    # Runs co-located with Zitadel so TLS is not needed for the loopback address.
+    extraContainers:
+      - name: zitadel-actions-server
+        image: ghcr.io/datum-cloud/auth-provider-zitadel:dev
+        imagePullPolicy: Never
+        args:
+          - actions-server
+          - --addr=127.0.0.1:8888
+          - --disable-signature-validation=true

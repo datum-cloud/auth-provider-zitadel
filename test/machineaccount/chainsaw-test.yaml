@@ -89,17 +89,28 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
             echo "Using namespace: $NAMESPACE"
-            ACTIVE_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-            INACTIVE_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-            echo "Active UID: $ACTIVE_UID"
-            echo "Inactive UID: $INACTIVE_UID"
-            ACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${ACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
-            INACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${INACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
-            echo "Active MachineAccount (now Inactive): $ACTIVE_STATE"
-            echo "Inactive MachineAccount (now Active): $INACTIVE_STATE"
-            # Verify the states are flipped
-            [[ "$ACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Active account should be inactive in Zitadel"; exit 1; }
-            [[ "$INACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Inactive account should be active in Zitadel"; exit 1; }
+            # The controller uses the Kubernetes UID as the Zitadel UserID.
+            USER_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            
+            echo "Waiting for Zitadel reconciliation for user $USER_UID..."
+            for i in {1..10}; do
+              RESPONSE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${USER_UID}" -H "Host: zitadel.zitadel-system.svc.cluster.local" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
+              ACTIVE_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
+              
+              INACTIVE_USER_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+              RESPONSE_INACTIVE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${INACTIVE_USER_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
+              INACTIVE_STATE=$(echo "$RESPONSE_INACTIVE" | jq -r '.user.state // empty')
+              
+              if [[ "$ACTIVE_STATE" == "USER_STATE_INACTIVE" && "$INACTIVE_STATE" == "USER_STATE_ACTIVE" ]]; then
+                echo "States successfully flipped in Zitadel!"
+                break
+              fi
+              echo "Waiting for state flip... (Active is $ACTIVE_STATE, Inactive is $INACTIVE_STATE)"
+              sleep 2
+            done
+            
+            [[ "$ACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Active account should be inactive in Zitadel. Last response: $RESPONSE"; exit 1; }
+            [[ "$INACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Inactive account should be active in Zitadel. Last response: $RESPONSE_INACTIVE"; exit 1; }
 
       # --- Step 5 : Revert to original states -----------------------------------
       - patch:
@@ -128,17 +139,28 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
             echo "Using namespace: $NAMESPACE"
-            ACTIVE_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-            INACTIVE_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-            echo "Active UID: $ACTIVE_UID"
-            echo "Inactive UID: $INACTIVE_UID"
-            ACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${ACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
-            INACTIVE_STATE=$(curl -s -L "$ZITADEL_DOMAIN/v2/users/${INACTIVE_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN" | jq -r '.user.state')
-            echo "Active MachineAccount (back to Active): $ACTIVE_STATE"
-            echo "Inactive MachineAccount (back to Inactive): $INACTIVE_STATE"
-            # Verify the states are back to original
-            [[ "$ACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Active account should be active in Zitadel"; exit 1; }
-            [[ "$INACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Inactive account should be inactive in Zitadel"; exit 1; }
+            # The controller uses the Kubernetes UID as the Zitadel UserID.
+            USER_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            
+            echo "Waiting for Zitadel reconciliation for user $USER_UID..."
+            for i in {1..10}; do
+              RESPONSE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${USER_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
+              ACTIVE_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
+              
+              INACTIVE_USER_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+              RESPONSE_INACTIVE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${INACTIVE_USER_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
+              INACTIVE_STATE=$(echo "$RESPONSE_INACTIVE" | jq -r '.user.state // empty')
+              
+              if [[ "$ACTIVE_STATE" == "USER_STATE_ACTIVE" && "$INACTIVE_STATE" == "USER_STATE_INACTIVE" ]]; then
+                echo "States successfully reverted in Zitadel!"
+                break
+              fi
+              echo "Waiting for state revert... (Active is $ACTIVE_STATE, Inactive is $INACTIVE_STATE)"
+              sleep 2
+            done
+            
+            [[ "$ACTIVE_STATE" == "USER_STATE_ACTIVE" ]] || { echo "ERROR: Active account should be active in Zitadel. Last response: $RESPONSE"; exit 1; }
+            [[ "$INACTIVE_STATE" == "USER_STATE_INACTIVE" ]] || { echo "ERROR: Inactive account should be inactive in Zitadel. Last response: $RESPONSE_INACTIVE"; exit 1; }
 
   - name: verify-original-state
     try:
