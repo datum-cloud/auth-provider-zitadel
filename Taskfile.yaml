@@ -55,6 +55,36 @@ tasks:
     cmds:
       - task: test-infra:cluster-down
 
+  ci:configure-hosts:
+    desc: Ensure /etc/hosts entry for Zitadel exists
+    silent: true
+    cmds:
+      - |
+        echo "=== Ensuring /etc/hosts entry for Zitadel ==="
+        if ! grep -q "zitadel.zitadel-system.svc.cluster.local" /etc/hosts; then
+          echo "Adding 127.0.0.1 zitadel.zitadel-system.svc.cluster.local to /etc/hosts (requires sudo)..."
+          echo "127.0.0.1 zitadel.zitadel-system.svc.cluster.local" | sudo tee -a /etc/hosts
+        else
+          echo "/etc/hosts already configured."
+        fi
+      - |
+        echo ""
+        echo "################################################################################"
+        echo "#                                                                              #"
+        echo "#   ZITADEL SETUP COMPLETE!                                                    #"
+        echo "#                                                                              #"
+        echo "#   The Zitadel UI is now accessible at:                                       #"
+        echo "#   https://zitadel.zitadel-system.svc.cluster.local                           #"
+        echo "#                                                                              #"
+        echo "#   user: admin@localhost                                                      #"
+        echo "#   password: Password1!                                                       #"
+        echo "#                                                                              #"
+        echo "#   To start the port-forwarding, run:                                         #"
+        echo "#   task ci:port-forward                                                       #"
+        echo "#                                                                              #"
+        echo "################################################################################"
+        echo ""
+
   ci:zitadel:reset:
     desc: Wipe and re-bootstrap Zitadel without recreating the Kind cluster
     silent: true
@@ -121,6 +151,7 @@ tasks:
         echo "Applying Kyverno secret-sync policy..."
         task test-infra:kubectl -- apply -k config/dependencies/kyverno
 
+
   ci:install-external-crds:
     desc: Install IAM CRDs from Milo
     silent: true
@@ -133,9 +164,9 @@ tasks:
         echo "IAM CRDs installed."
 
   ci:port-forward:
-    desc: Port-forward Zitadel service to localhost:8443 (HTTPS)
+    desc: Port-forward nginx proxy to localhost:443 (routes /ui/v2/login to login UI, all else to Zitadel)
     cmds:
-      - kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n zitadel-system svc/zitadel 8443:443
+      - sudo kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n zitadel-system svc/zitadel-proxy 443:443
 
   ci:deploy:
     desc: Deploy all three services using the CI overlay

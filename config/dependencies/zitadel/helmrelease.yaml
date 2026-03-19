@@ -40,7 +40,17 @@ spec:
     login:
       customConfigmapConfig: |
         ZITADEL_SERVICE_USER_TOKEN_FILE="/login-client/pat"
-        ZITADEL_API_URL="http://zitadel.zitadel-system.svc.cluster.local:8080"
+        ZITADEL_API_URL="https://zitadel.zitadel-system.svc.cluster.local:443"
+        NODE_EXTRA_CA_CERTS="/etc/zitadel/tls/ca.crt"
+        CUSTOM_REQUEST_HEADERS="Host:zitadel.zitadel-system.svc.cluster.local,X-Zitadel-Public-Host:zitadel.zitadel-system.svc.cluster.local"
+      extraVolumes:
+        - name: zitadel-tls
+          secret:
+            secretName: zitadel-tls
+      extraVolumeMounts:
+        - name: zitadel-tls
+          mountPath: /etc/zitadel/tls
+          readOnly: true
 
     setupJob:
       machinekeyWriter:
@@ -125,11 +135,19 @@ spec:
               MachineKey:
                 # Type 1 = JSON service account key
                 Type: 1
+            # Creates the login UI service user (IAM_LOGIN_CLIENT role) and
+            # stores a PAT in the "login-client" secret for the login deployment.
+            LoginClient:
+              Pat:
+                ExpirationDate: "2099-01-01T00:00:00Z"
 
     extraVolumes:
       - name: zitadel-tls
         secret:
           secretName: zitadel-tls
+      - name: nginx-proxy-config
+        configMap:
+          name: nginx-proxy-config
 
     extraVolumeMounts:
       - name: zitadel-tls
@@ -146,3 +164,18 @@ spec:
           - actions-server
           - --addr=127.0.0.1:8888
           - --disable-signature-validation=true
+
+      # nginx reverse proxy: terminates TLS on port 9443 (the service targetPort)
+      # and routes /ui/v2/login to the login UI service, everything else to Zitadel.
+      - name: nginx-proxy
+        image: nginx:stable-alpine
+        ports:
+          - containerPort: 9443
+        volumeMounts:
+          - name: zitadel-tls
+            mountPath: /etc/zitadel/tls
+            readOnly: true
+          - name: nginx-proxy-config
+            mountPath: /etc/nginx/nginx.conf
+            subPath: nginx.conf
+            readOnly: true

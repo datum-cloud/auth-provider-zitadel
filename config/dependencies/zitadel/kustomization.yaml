@@ -5,3 +5,5 @@ resources:
   - namespace.yaml
   - helmrepository.yaml
   - helmrelease.yaml
+  - nginx-proxy-config.yaml
+  - nginx-proxy-service.yaml
