@@ -92,7 +92,7 @@ spec:
             USER_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
             
             echo "Waiting for Zitadel reconciliation for user $USER_UID..."
-            for i in {1..10}; do
+            for i in 1 2 3 4 5 6 7 8 9 10; do
               RESPONSE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${USER_UID}" -H "Host: zitadel.zitadel-system.svc.cluster.local" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
               ACTIVE_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
               
@@ -141,7 +141,7 @@ spec:
             USER_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
             
             echo "Waiting for Zitadel reconciliation for user $USER_UID..."
-            for i in {1..10}; do
+            for i in 1 2 3 4 5 6 7 8 9 10; do
               RESPONSE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${USER_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
               ACTIVE_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
               

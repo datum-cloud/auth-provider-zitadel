@@ -42,7 +42,7 @@ spec:
             kubectl patch user human-user --subresource=status --type=merge -p '{"status": {"state": "Active"}}'
             
             echo "Waiting for Zitadel reconciliation for user human-user..."
-            for i in {1..10}; do
+            for i in 1 2 3 4 5 6 7 8 9 10; do
               # We use v2 API to check the state, which is common for all user types.
               RESPONSE=$(curl -v -s -L --show-error --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}")
               USER_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
@@ -50,7 +50,7 @@ spec:
                 echo "User successfully active in Zitadel!"
                 break
               fi
-              echo "Waiting for state ACTIVE... (currently $USER_STATE)"
+              echo "Waiting for state ACTIVE... (currently $USER_STATE, attempt $i/10)"
               sleep 2
             done
             if [ "$USER_STATE" != "USER_STATE_ACTIVE" ]; then
@@ -73,14 +73,14 @@ spec:
           content: |
             set -e
             echo "Waiting for Zitadel deactivation for user human-user..."
-            for i in {1..10}; do
+            for i in 1 2 3 4 5 6 7 8 9 10; do
               RESPONSE=$(curl -v -s -L --show-error --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}")
               USER_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
               if [ "$USER_STATE" = "USER_STATE_INACTIVE" ]; then
                 echo "User successfully deactivated in Zitadel!"
                 break
               fi
-              echo "Waiting for state INACTIVE... (currently $USER_STATE)"
+              echo "Waiting for state INACTIVE... (currently $USER_STATE, attempt $i/10)"
               sleep 2
             done
             if [ "$USER_STATE" != "USER_STATE_INACTIVE" ]; then
@@ -101,7 +101,7 @@ spec:
           content: |
             set -e
             echo "Waiting for Zitadel reconciliation for user human-user..."
-            for i in {1..10}; do
+            for i in 1 2 3 4 5 6 7 8 9 10; do
               # Finalizer logic for UserDeactivation relies on User status being Inactive.
               # Since we patched it to Inactive above, the finalizer should reactivate it in Zitadel.
               RESPONSE=$(curl -v -s -L --show-error --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}")
@@ -110,7 +110,7 @@ spec:
                 echo "User successfully active in Zitadel!"
                 break
               fi
-              echo "Waiting for state ACTIVE... (currently $USER_STATE)"
+              echo "Waiting for state ACTIVE... (currently $USER_STATE, attempt $i/10)"
               sleep 2
             done
             if [ "$USER_STATE" != "USER_STATE_ACTIVE" ]; then
