@@ -22,8 +22,7 @@ spec:
       # --- Create human user in Zitadel with same user name ---------------------------------------------
       - script:
           content: |
-            #!/usr/bin/env bash
-            set -euo pipefail
+            set -e
             echo "Creating (or ensuring) human-user in Zitadel..."
             # We rely on two env variables that must be provided when running the suite:
             #   ZITADEL_DOMAIN – the base URL of the Zitadel instance (e.g. http://localhost:8080)
@@ -47,14 +46,14 @@ spec:
               # We use v2 API to check the state, which is common for all user types.
               RESPONSE=$(curl -v -s -L --show-error --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}")
               USER_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
-              if [[ "$USER_STATE" == "USER_STATE_ACTIVE" ]]; then
+              if [ "$USER_STATE" = "USER_STATE_ACTIVE" ]; then
                 echo "User successfully active in Zitadel!"
                 break
               fi
               echo "Waiting for state ACTIVE... (currently $USER_STATE)"
               sleep 2
             done
-            if [[ "$USER_STATE" != "USER_STATE_ACTIVE" ]]; then
+            if [ "$USER_STATE" != "USER_STATE_ACTIVE" ]; then
               echo "ERROR: expected USER_STATE_ACTIVE but got $USER_STATE. Response: $RESPONSE" >&2
               exit 1
             fi
@@ -72,20 +71,19 @@ spec:
       # --- Verify the Zitadel user is inactive -----------------------------------
       - script:
           content: |
-            #!/usr/bin/env bash
-            set -euo pipefail
+            set -e
             echo "Waiting for Zitadel deactivation for user human-user..."
             for i in {1..10}; do
               RESPONSE=$(curl -v -s -L --show-error --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}")
               USER_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
-              if [[ "$USER_STATE" == "USER_STATE_INACTIVE" ]]; then
+              if [ "$USER_STATE" = "USER_STATE_INACTIVE" ]; then
                 echo "User successfully deactivated in Zitadel!"
                 break
               fi
               echo "Waiting for state INACTIVE... (currently $USER_STATE)"
               sleep 2
             done
-            if [[ "$USER_STATE" != "USER_STATE_INACTIVE" ]]; then
+            if [ "$USER_STATE" != "USER_STATE_INACTIVE" ]; then
               echo "ERROR: expected USER_STATE_INACTIVE but got $USER_STATE. Response: $RESPONSE" >&2
               exit 1
             fi
@@ -101,22 +99,21 @@ spec:
       # --- Verify the Zitadel user is active -----------------------------------
       - script:
           content: |
-            #!/usr/bin/env bash
-            set -euo pipefail
+            set -e
             echo "Waiting for Zitadel reconciliation for user human-user..."
             for i in {1..10}; do
               # Finalizer logic for UserDeactivation relies on User status being Inactive.
               # Since we patched it to Inactive above, the finalizer should reactivate it in Zitadel.
               RESPONSE=$(curl -v -s -L --show-error --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "${ZITADEL_DOMAIN}/v2/users/human-user" -H 'Accept: application/json' -H "Authorization: Bearer ${ZITADEL_TOKEN}")
               USER_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
-              if [[ "$USER_STATE" == "USER_STATE_ACTIVE" ]]; then
+              if [ "$USER_STATE" = "USER_STATE_ACTIVE" ]; then
                 echo "User successfully active in Zitadel!"
                 break
               fi
               echo "Waiting for state ACTIVE... (currently $USER_STATE)"
               sleep 2
             done
-            if [[ "$USER_STATE" != "USER_STATE_ACTIVE" ]]; then
+            if [ "$USER_STATE" != "USER_STATE_ACTIVE" ]; then
               echo "ERROR: expected USER_STATE_ACTIVE but got $USER_STATE. Response: $RESPONSE" >&2
               exit 1
             fi
