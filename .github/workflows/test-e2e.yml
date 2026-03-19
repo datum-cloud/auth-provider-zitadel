@@ -1,7 +1,9 @@
 name: End-to-End Tests
 
 on:
-  push: {}
+  push:
+    branches:
+      - main
   pull_request: {}
   workflow_dispatch:
     inputs:
