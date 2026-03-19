@@ -181,6 +181,7 @@ tasks:
           NAME: chainsaw
           PACKAGE: github.com/kyverno/chainsaw
           VERSION: "{{.CHAINSAW_VERSION}}"
+      - task: zitadel-tools
     cmds:
       - |
         set -e
