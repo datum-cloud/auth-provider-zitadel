@@ -1,45 +1,201 @@
-name: E2E Tests
+name: End-to-End Tests
 
 on:
-  push:
-  pull_request:
+  push: {}
+  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run (e.g., machineaccount, userdeactivation or empty for all)'
+        required: false
+        default: ''
+        type: string
+
+env:
+  # Enable experimental remote taskfiles feature
+  TASK_X_REMOTE_TASKFILES: 1
+  # Test infrastructure configuration
+  TEST_INFRA_CLUSTER_NAME: test-infra
+  IMAGE_NAME: ghcr.io/datum-cloud/auth-provider-zitadel
+  IMAGE_TAG: dev
 
 jobs:
   test-e2e:
-    name: Run on Ubuntu
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+
     steps:
-      - name: Clone the code
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version-file: 'go.mod'
+          cache: true
 
-      - name: Install docker-compose
+      - name: Install Task CLI
         run: |
-          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
-          docker-compose --version
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-      - name: Install the latest version of kind
+      - name: Verify Task installation
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+          task --version
+          echo "Available tasks:"
+          task --list
 
-      - name: Verify kind installation
-        run: kind version
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 4
 
-      - name: Create kind cluster
-        run: make kind-create
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.30.0'
 
-      - name: Running Test e2e
+      - name: Install KinD
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+          version: v0.24.0
+
+      - name: Verify prerequisites
         run: |
-          go mod tidy
-          make test-e2e
+          echo "=== Checking prerequisites ==="
+          docker version
+          kubectl version --client
+          kind version
+          echo "Go version: $(go version)"
 
-      - name: Cleanup kind cluster
+      - name: Set up test environment
+        run: |
+          echo "=== Setting up test environment ==="
+          # This task handles cluster creation, image build/load, and deployment
+          task ci:setup
+
+      - name: Verify components
+        run: |
+          echo "=== Verifying Auth Provider Zitadel components ==="
+          
+          APP_NAMESPACE="auth-provider-zitadel-system"
+          ZITADEL_NAMESPACE="zitadel-system"
+
+          # Verify components are running
+          echo "Checking Auth Provider Zitadel components:"
+          task test-infra:kubectl -- get pods -n $APP_NAMESPACE
+
+          # Wait for components to be ready
+          echo "⏳ Waiting for controller manager to be ready..."
+          task test-infra:kubectl -- wait --for=condition=Available deployment/controller-manager -n $APP_NAMESPACE --timeout=1000s
+
+          echo "⏳ Waiting for API server to be ready..."
+          task test-infra:kubectl -- wait --for=condition=Available deployment/apiserver -n $APP_NAMESPACE --timeout=1000s
+
+          echo "⏳ Waiting for AuthN webhook to be ready..."
+          task test-infra:kubectl -- wait --for=condition=Available deployment/authn-webhook -n $APP_NAMESPACE --timeout=1000s
+
+          echo "⏳ Checking Zitadel status..."
+          task test-infra:kubectl -- wait --for=condition=Available deployment/zitadel -n $ZITADEL_NAMESPACE --timeout=1000s
+
+          # Verify Aggregated API Availability (CA Injection)
+          echo "⏳ Verifying Aggregated API Availability..."
+          for i in {1..30}; do
+            CA_LEN=$(task test-infra:kubectl -- get apiservice v1alpha1.identity.miloapis.com -o jsonpath='{len(.spec.caBundle)}' 2>/dev/null || echo "0")
+            if [ "$CA_LEN" -gt "0" ]; then
+              echo "✅ CA Bundle injected into APIService."
+              break
+            fi
+            echo "⏳ Waiting for CA injection into identity APIService (attempt $i/30)..."
+            sleep 2
+          done
+          
+          # Verify Discovery works
+          echo "Verifying API Discovery..."
+          task test-infra:kubectl -- get apiservice v1alpha1.identity.miloapis.com
+          
+          echo "✓ Components verification complete"
+
+      - name: Run end-to-end tests
+        run: |
+          echo "=== Running end-to-end tests ==="
+
+          # Determine which tests to run based on input
+          if [ -n "${{ github.event.inputs.test_suite }}" ]; then
+            echo "Running specified test suite: ${{ github.event.inputs.test_suite }}"
+            task test:end-to-end -- ${{ github.event.inputs.test_suite }}
+          else
+            echo "Running all end-to-end tests..."
+            task test:end-to-end
+          fi
+
+      - name: Collect debug information on failure
+        if: failure()
+        run: |
+          echo "=== Collecting debug information ==="
+          APP_NAMESPACE="auth-provider-zitadel-system"
+          ZITADEL_NAMESPACE="zitadel-system"
+
+          # Cluster status
+          echo "=== Infrastructure Cluster Status ==="
+          task test-infra:kubectl -- get pods -A || true
+          task test-infra:kubectl -- get nodes -o wide || true
+
+          # App status and logs
+          echo "=== Auth Provider Zitadel Status ==="
+          task test-infra:kubectl -- describe pods -n $APP_NAMESPACE || true
+          
+          echo "--- Controller Manager Logs ---"
+          task test-infra:kubectl -- logs -n $APP_NAMESPACE -l app.kubernetes.io/component=controller-manager --tail=500 || true
+          
+          echo "--- API Server Logs ---"
+          task test-infra:kubectl -- logs -n $APP_NAMESPACE -l app.kubernetes.io/component=apiserver --tail=500 || true
+          
+          echo "--- AuthN Webhook Logs ---"
+          task test-infra:kubectl -- logs -n $APP_NAMESPACE -l app.kubernetes.io/component=authn-webhook --tail=500 || true
+
+          # Zitadel status and logs
+          echo "=== Zitadel Status ==="
+          task test-infra:kubectl -- describe pods -n $ZITADEL_NAMESPACE || true
+          
+          echo "--- Zitadel Logs ---"
+          task test-infra:kubectl -- logs -n $ZITADEL_NAMESPACE -l app.kubernetes.io/name=zitadel --tail=500 || true
+
+          # PostgreSQL status
+          echo "--- PostgreSQL Logs ---"
+          task test-infra:kubectl -- logs -n $ZITADEL_NAMESPACE -l app=zitadel-postgresql --tail=100 || true
+
+          # Docker container status
+          echo "=== Docker Containers ==="
+          docker ps -a || true
+
+          # KinD cluster info
+          echo "=== KinD cluster info ==="
+          kind get clusters || true
+          kind export logs /tmp/kind-logs --name $TEST_INFRA_CLUSTER_NAME || true
+
+      - name: Upload debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-logs
+          path: |
+            /tmp/kind-logs/
+          if-no-files-found: ignore
+
+      - name: Cleanup test infrastructure
         if: always()
-        run: make kind-delete
+        run: |
+          echo "=== Cleaning up test infrastructure ==="
+
+          # Clean up test infrastructure cluster
+          task test-infra:cluster-down || true
+
+          # Verify cleanup
+          echo "Remaining KinD clusters:"
+          kind get clusters || true
+
+          echo "Remaining Docker containers:"
+          docker ps -a --filter "name=$TEST_INFRA_CLUSTER_NAME" || true
