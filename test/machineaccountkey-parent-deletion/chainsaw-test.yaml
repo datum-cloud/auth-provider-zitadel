@@ -1,0 +1,131 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: parent-account-deletion
+spec:
+  # This test exercises the garbage collection and cascade deletion.
+  # 1. Create a MachineAccount with two MachineAccountKeys.
+  # 2. Verify all resources are reconciled and Ready in ZITADEL.
+  # 3. Delete the parent MachineAccount.
+  # 4. Verify Kubernetes GC removes the child keys and the user is gone in ZITADEL.
+  steps:
+  - name: create-machine-account-with-2-keys
+    try:
+    - apply:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: ma-multi-keys
+          spec:
+            state: Active
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: ma-multi-keys
+          status:
+            state: Active
+            conditions:
+            - type: Ready
+              status: "True"
+    - script:
+        content: |
+          set -e
+          # Key 1
+          openssl genrsa -out /tmp/multi-priv1.pem 2048
+          openssl rsa -in /tmp/multi-priv1.pem -pubout -out /tmp/multi-pub1.pem
+          PUB_KEY1=$(cat /tmp/multi-pub1.pem)
+          
+          # Key 2
+          openssl genrsa -out /tmp/multi-priv2.pem 2048
+          openssl rsa -in /tmp/multi-priv2.pem -pubout -out /tmp/multi-pub2.pem
+          PUB_KEY2=$(cat /tmp/multi-pub2.pem)
+          
+          # Create two MachineAccountKeys
+          cat <<EOF | kubectl apply -n "$NAMESPACE" -f -
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccountKey
+          metadata:
+            name: multi-key-1
+          spec:
+            machineAccountName: ma-multi-keys
+            publicKey: |
+          $(echo "$PUB_KEY1" | sed 's/^/    /')
+          ---
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccountKey
+          metadata:
+            name: multi-key-2
+          spec:
+            machineAccountName: ma-multi-keys
+            publicKey: |
+          $(echo "$PUB_KEY2" | sed 's/^/    /')
+          EOF
+
+  - name: wait-for-keys-ready
+    try:
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccountKey
+          metadata:
+            name: multi-key-1
+          status:
+            conditions:
+            - type: Ready
+              status: "True"
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccountKey
+          metadata:
+            name: multi-key-2
+          status:
+            conditions:
+            - type: Ready
+              status: "True"
+
+  - name: delete-machine-account
+    try:
+    - script:
+        content: |
+          set -e
+          USER_UID=$(kubectl get machineaccount ma-multi-keys -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+          KEY_ID1=$(kubectl get machineaccountkey multi-key-1 -n "$NAMESPACE" -o jsonpath='{.status.authProviderKeyId}')
+          KEY_ID2=$(kubectl get machineaccountkey multi-key-2 -n "$NAMESPACE" -o jsonpath='{.status.authProviderKeyId}')
+          
+          # Delete the MachineAccount (should cascade to keys in K8s and delete user in ZITADEL)
+          kubectl delete machineaccount ma-multi-keys -n "$NAMESPACE"
+          
+          # Wait for resources to be gone
+          # This might take time due to finalizers
+          for i in {1..15}; do
+            if ! kubectl get machineaccount ma-multi-keys -n "$NAMESPACE" > /dev/null 2>&1 && \
+               ! kubectl get machineaccountkey multi-key-1 -n "$NAMESPACE" > /dev/null 2>&1 && \
+               ! kubectl get machineaccountkey multi-key-2 -n "$NAMESPACE" > /dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for deletion... attempt $i"
+            sleep 2
+          done
+          
+          # Verify in ZITADEL: User should be gone, thus keys are gone.
+          # We try to get the user; it should 404.
+          RESPONSE=$(curl -k -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' \
+            "$ZITADEL_DOMAIN/v2/users/${USER_UID}" \
+            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
+            -H 'Accept: application/json' \
+            -H "Authorization: Bearer $ZITADEL_TOKEN")
+            
+          # The user's metadata should not be in the response or it should be an error
+          # ZITADEL V2 API returns error if not found.
+          if echo "$RESPONSE" | grep -q "\"${USER_UID}\""; then
+             # Check if state is Deleted? No, usually it's just 404.
+             # In some cases ZITADEL might keep it for a while or return it with deleted status.
+             # But if everything worked, it shouldn't have the UID as a valid user.
+             echo "ERROR: User ${USER_UID} still exists in ZITADEL. Response: $RESPONSE"
+             exit 1
+          fi
+          echo "User and keys successfully deleted!"

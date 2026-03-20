@@ -1,0 +1,184 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: machineaccount-deactivation
+spec:
+  # This test verifies that deactivating a MachineAccount prevents its keys from working.
+  # 1. Create a MachineAccount (Active) and a MachineAccountKey.
+  # 2. Verify an access token can be obtained.
+  # 3. Deactivate the MachineAccount (state: Inactive).
+  # 4. Verify getting an access token fails.
+  # 5. Re-activate the MachineAccount (state: Active).
+  # 6. Verify getting an access token works again.
+  steps:
+  - name: create-resources
+    try:
+    - apply:
+        file: resources/machineaccount.yaml
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          status:
+            state: Active
+            conditions:
+            - type: Ready
+              status: "True"
+    - script:
+        content: |
+          set -e
+          openssl genrsa -out /tmp/deact-priv.pem 2048
+          openssl rsa -in /tmp/deact-priv.pem -pubout -out /tmp/deact-pub.pem
+          PUB_KEY=$(cat /tmp/deact-pub.pem)
+          
+          cat <<EOF | kubectl apply -n "$NAMESPACE" -f -
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccountKey
+          metadata:
+            name: deact-key
+          spec:
+            machineAccountName: deactivation-ma
+            publicKey: |
+          $(echo "$PUB_KEY" | sed 's/^/    /')
+          EOF
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccountKey
+          metadata:
+            name: deact-key
+          status:
+            conditions:
+            - type: Ready
+              status: "True"
+
+  - name: verify-token-works-initially
+    try:
+    - script:
+        content: |
+          set -e
+          USER_UID=$(kubectl get machineaccount deactivation-ma -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+          KEY_ID=$(kubectl get machineaccountkey deact-key -n "$NAMESPACE" -o jsonpath='{.status.authProviderKeyId}')
+          PRIV_KEY=$(cat /tmp/deact-priv.pem)
+          
+          cat <<EOF > /tmp/zitadel-key-deact.json
+          {
+            "type": "serviceaccount",
+            "keyId": "$KEY_ID",
+            "key": "$(echo "$PRIV_KEY" | awk '{printf "%s\\n", $0}' | sed 's/\"/\\"/g')",
+            "userId": "$USER_UID"
+          }
+          EOF
+          
+          ../../bin/zitadel-tools key2jwt \
+            --audience="https://zitadel.zitadel-system.svc.cluster.local" \
+            --key="/tmp/zitadel-key-deact.json" > /tmp/jwt-deact.token
+          
+          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
+            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
+            --data-urlencode "assertion=$(cat /tmp/jwt-deact.token)")
+            
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" == "null" ]; then
+            echo "ERROR: Failed to obtain access token. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Successfully obtained access token!"
+
+  - name: deactivate-machine-account
+    try:
+    - patch:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          spec:
+            state: Inactive
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          status:
+            state: Inactive
+            conditions:
+            - type: Ready
+              status: "True"
+
+  - name: verify-token-fails-when-inactive
+    timeouts:
+      exec: 20s
+    try:
+    - script:
+        content: |
+          set -e
+          # Wait a bit for ZITADEL to process the deactivation
+          sleep 5
+          
+          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
+            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
+            --data-urlencode "assertion=$(cat /tmp/jwt-deact.token)")
+            
+          ERROR=$(echo "$RESPONSE" | jq -r '.error')
+          # ZITADEL should return an error for inactive user
+          if [ "$ERROR" == "null" ] || [ -z "$ERROR" ]; then
+            echo "ERROR: Access token exchange should have failed for Inactive account! Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Success: Token exchange failed as expected for Inactive account (Error: $ERROR)"
+
+  - name: reactivate-machine-account
+    try:
+    - patch:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          spec:
+            state: Active
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          status:
+            state: Active
+            conditions:
+            - type: Ready
+              status: "True"
+
+  - name: verify-token-works-after-reactivation
+    timeouts:
+      exec: 20s
+    try:
+    - script:
+        content: |
+          set -e
+          # Wait a bit for ZITADEL to process the reactivation
+          sleep 5
+          
+          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
+            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
+            --data-urlencode "assertion=$(cat /tmp/jwt-deact.token)")
+            
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" == "null" ]; then
+            echo "ERROR: Failed to obtain access token after reactivation. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Successfully obtained access token again after reactivation!"

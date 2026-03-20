@@ -79,6 +79,9 @@ spec:
           # Zitadel configuration
           - --zitadel-base-url=$(ZITADEL_BASE_URL)
           - --zitadel-machine-account-key-path=$(ZITADEL_MACHINE_ACCOUNT_KEY_PATH)
+          - --zitadel-sdk-domain=$(ZITADEL_SDK_DOMAIN)
+          - --zitadel-sdk-issuer=$(ZITADEL_SDK_ISSUER)
+          - --zitadel-default-machine-key-expiration=$(ZITADEL_DEFAULT_MACHINE_KEY_EXPIRATION)
           # Controller manager configuration
           - --server-config=$(ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH)
           # Configure which kubeconfig to use for the core control plane.
@@ -120,6 +123,12 @@ spec:
           value: "https://zitadel.datum-cloud.com"
         - name: ZITADEL_MACHINE_ACCOUNT_KEY_PATH
           value: "/etc/zitadel/machine-account-key.json"
+        - name: ZITADEL_SDK_DOMAIN
+          value: "zitadel.datum-cloud.com"
+        - name: ZITADEL_SDK_ISSUER
+          value: "https://zitadel.datum-cloud.com"
+        - name: ZITADEL_DEFAULT_MACHINE_KEY_EXPIRATION
+          value: "87600h"
         # Controller manager configuration environment variables
         - name: ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH
           value: "/etc/zitadel/controller-manager-config.yaml"

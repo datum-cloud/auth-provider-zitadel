@@ -14,6 +14,8 @@ import (
 	userv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
 	"golang.org/x/oauth2"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	pb "google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/klog/v2"
 )
@@ -32,12 +34,16 @@ type SDKConfig struct {
 	Issuer string
 	// KeyPath is the path to the service user JSON key used to mint JWTs.
 	KeyPath string
+	// DefaultMachineKeyExpiration is used when a MachineAccountKey is created
+	// without an explicit expiration date. ZITADEL V2 requires an expiration.
+	DefaultMachineKeyExpiration time.Duration
 }
 
 type SDKClient struct {
-	sess sessionv2.SessionServiceClient
-	user userv2.UserServiceClient
-	idp  idpv2.IdentityProviderServiceClient
+	sess   sessionv2.SessionServiceClient
+	user   userv2.UserServiceClient
+	idp    idpv2.IdentityProviderServiceClient
+	config SDKConfig
 }
 
 // NewSDK builds a client bound to the SessionService v2.
@@ -110,9 +116,10 @@ func NewSDK(ctx context.Context, cfg SDKConfig) (*SDKClient, error) {
 
 	klog.V(2).Info("NewSDK: SessionServiceV2, UserServiceV2, and IdpServiceV2 clients ready")
 	return &SDKClient{
-		sess: cl.SessionServiceV2(),
-		user: cl.UserServiceV2(),
-		idp:  cl.IdpServiceV2(),
+		sess:   cl.SessionServiceV2(),
+		user:   cl.UserServiceV2(),
+		idp:    cl.IdpServiceV2(),
+		config: cfg,
 	}, nil
 }
 
@@ -287,4 +294,43 @@ func localIdentityUsername(user *userv2.User) string {
 		}
 	}
 	return strings.TrimSpace(user.GetUsername())
+}
+
+// AddMachineKey registers a public key for a machine user in Zitadel.
+// publicKey must be a PEM-encoded RSA public key as raw bytes.
+// expirationDate is optional; pass nil for a non-expiring key.
+// Returns the Zitadel-assigned key ID to be stored in status.authProviderKeyId.
+func (c *SDKClient) AddMachineKey(ctx context.Context, userID string, publicKey []byte, expirationDate *time.Time) (string, error) {
+	req := &userv2.AddKeyRequest{
+		UserId:    userID,
+		PublicKey: publicKey,
+	}
+	if expirationDate != nil {
+		req.ExpirationDate = pb.New(*expirationDate)
+	} else {
+		// ZITADEL V2 API requires an expiration date.
+		req.ExpirationDate = pb.New(time.Now().Add(c.config.DefaultMachineKeyExpiration))
+	}
+
+	resp, err := c.user.AddKey(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return resp.GetKeyId(), nil
+}
+
+// RemoveMachineKey revokes a machine user key from Zitadel.
+// A gRPC NotFound error is swallowed and treated as success (idempotent).
+func (c *SDKClient) RemoveMachineKey(ctx context.Context, userID, keyID string) error {
+	_, err := c.user.RemoveKey(ctx, &userv2.RemoveKeyRequest{
+		UserId: userID,
+		KeyId:  keyID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil
+		}
+		return err
+	}
+	return nil
 }

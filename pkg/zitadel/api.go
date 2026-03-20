@@ -23,10 +23,15 @@ type IDPLink struct {
 	IDPUserName string
 }
 
-// API is the minimal surface needed by our storage to serve sessions and identity providers.
+// API is the minimal surface needed by our storage and controllers.
 type API interface {
+	// identity management
 	ListSessions(ctx context.Context, userID string) ([]Session, error)
 	GetSession(ctx context.Context, sessionID string) (*Session, error)
 	DeleteSession(ctx context.Context, userID, sessionID string) error
 	ListIDPLinks(ctx context.Context, userID string) ([]IDPLink, error)
+
+	// machine key lifecycle
+	AddMachineKey(ctx context.Context, userID string, publicKey []byte, expirationDate *time.Time) (keyID string, err error)
+	RemoveMachineKey(ctx context.Context, userID, keyID string) error
 }
