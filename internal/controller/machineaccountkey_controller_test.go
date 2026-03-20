@@ -373,8 +373,8 @@ var _ = ginkgo.Describe("MachineAccountKeyController", func() {
 		gomega.Expect(conditionReason(updated, "Ready")).To(gomega.Equal("Rotated"))
 	})
 
-	// TC-06: Rotation — old key revocation fails (non-fatal).
-	ginkgo.It("TC-06: should not requeue when old key revocation fails during rotation", func() {
+	// TC-06: Rotation — old key revocation fails (fatal for security).
+	ginkgo.It("TC-06: should return error when old key revocation fails during rotation", func() {
 		oldPubKey := "ssh-rsa AAAA old2"
 		newPubKey := "ssh-rsa AAAA new2"
 		oldHash := publicKeyHash(oldPubKey)
@@ -406,22 +406,24 @@ var _ = ginkgo.Describe("MachineAccountKeyController", func() {
 			Build()
 		r = newReconciler(mock, cl, s)
 
+		addCalled := false
 		mock.addMachineKeyFn = func(_ context.Context, _ string, _ []byte, _ *time.Time) (string, error) {
+			addCalled = true
 			return "new-id-2", nil
 		}
 		mock.removeMachineKeyFn = func(_ context.Context, _, _ string) error {
 			return fmt.Errorf("revoke failed")
 		}
 
-		res, err := r.Reconcile(ctx, reconcileReq(ns, "test-key-rotate-fail"))
-		gomega.Expect(err).ToNot(gomega.HaveOccurred()) // best-effort, no requeue
-		gomega.Expect(res.RequeueAfter).To(gomega.Equal(time.Duration(0)))
+		_, err := r.Reconcile(ctx, reconcileReq(ns, "test-key-rotate-fail"))
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(err.Error()).To(gomega.ContainSubstring("remove old machine key: revoke failed"))
+		gomega.Expect(addCalled).To(gomega.BeFalse())
 
 		updated := &iammiloapiscomv1alpha1.MachineAccountKey{}
 		gomega.Expect(cl.Get(ctx, types.NamespacedName{Namespace: ns, Name: "test-key-rotate-fail"}, updated)).To(gomega.Succeed())
-		gomega.Expect(updated.Status.AuthProviderKeyID).To(gomega.Equal("new-id-2"))
-		gomega.Expect(conditionStatus(updated, "Ready")).To(gomega.Equal(metav1.ConditionTrue))
-		gomega.Expect(conditionReason(updated, "Ready")).To(gomega.Equal("Rotated"))
+		// Status should still be the old key ID
+		gomega.Expect(updated.Status.AuthProviderKeyID).To(gomega.Equal("old-id-2"))
 	})
 
 	// TC-07: Deletion — finalizer revokes key.
