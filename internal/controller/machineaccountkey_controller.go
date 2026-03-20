@@ -212,7 +212,7 @@ func (r *MachineAccountKeyController) Reconcile(ctx context.Context, req mcrecon
 			_ = clusterClient.Status().Update(ctx, mak)
 			return ctrl.Result{}, fmt.Errorf("add machine key: %w", err)
 		}
-		
+
 		log.Info("Successfully registered new machine key in Zitadel", "keyID", keyID)
 
 		setAnnotation(mak, machineAccountKeyPublicKeyHashAnnotation, currentHash)
@@ -227,7 +227,7 @@ func (r *MachineAccountKeyController) Reconcile(ctx context.Context, req mcrecon
 			log.Error(err, "Failed to update K8s status with keyID")
 			return ctrl.Result{}, err
 		}
-		
+
 		log.Info("Reconciliation completed for new key")
 		return ctrl.Result{}, nil
 	}
