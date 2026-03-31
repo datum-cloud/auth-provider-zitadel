@@ -7,18 +7,18 @@ import (
 )
 
 func Denied(reason string) Response {
-	return authenticationResponse(false, "", "", reason, "")
+	return authenticationResponse(false, "", "", reason, iammiloapiscomv1alpha1.RegistrationApprovalStateRejected)
 }
 
 func Errored(err error) Response {
-	return authenticationResponse(false, "", "", err.Error(), "")
+	return authenticationResponse(false, "", "", err.Error(), iammiloapiscomv1alpha1.RegistrationApprovalStateRejected)
 }
 
-func Allowed(username, uid string, registrationApproval iammiloapiscomv1alpha1.RegistrationApprovalState) Response {
-	return authenticationResponse(true, username, uid, "", registrationApproval)
+func Allowed(username, uid string) Response {
+	return authenticationResponse(true, username, uid, "", iammiloapiscomv1alpha1.RegistrationApprovalStateApproved)
 }
 
-func authenticationResponse(authenticated bool, username, uid, evaluationError string, registrationApproval iammiloapiscomv1alpha1.RegistrationApprovalState) Response {
+func authenticationResponse(authenticated bool, username, uid, evaluationError string, state iammiloapiscomv1alpha1.RegistrationApprovalState) Response {
 	return Response{
 		TokenReview: authenticationv1.TokenReview{
 			TypeMeta: metav1.TypeMeta{
@@ -31,7 +31,7 @@ func authenticationResponse(authenticated bool, username, uid, evaluationError s
 					Username: username,
 					UID:      uid,
 					Extra: map[string]authenticationv1.ExtraValue{
-						"iam.miloapis.com/registrationApproval": {string(registrationApproval)},
+						"iam.miloapis.com/registrationApproval": {string(state)},
 					},
 				},
 				Error: evaluationError,
