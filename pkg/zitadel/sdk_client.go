@@ -352,8 +352,9 @@ func (c *SDKClient) AddMachineUserInOrganization(ctx context.Context, orgID, use
 		Username:       &username,
 		UserType: &userv2.CreateUserRequest_Machine_{
 			Machine: &userv2.CreateUserRequest_Machine{
-				Name:        displayName,
-				Description: nil,
+				Name:            displayName,
+				Description:     nil,
+				AccessTokenType: userv2.AccessTokenType_ACCESS_TOKEN_TYPE_JWT,
 			},
 		},
 	}

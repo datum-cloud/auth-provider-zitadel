@@ -35,9 +35,9 @@ spec:
           trap "kill $PROXY_PID 2>/dev/null || true" EXIT
           sleep 1
 
-          # The Zitadel username is the computed email: {uid}@{namespace}.{clusterName}.iam.miloapis.com
+          # The Zitadel username is the computed email: {name}@single.identity.miloapis.com
           MA_UID=$(kubectl get machineaccount deactivation-ma -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="${MA_UID}@${NAMESPACE}.single.iam.miloapis.com"
+          MA_USERNAME="deactivation-ma@single.identity.miloapis.com"
           echo "$MA_USERNAME" > /tmp/ma_username.txt
 
           # Create Key 1

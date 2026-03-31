@@ -172,6 +172,11 @@ tasks:
     cmds:
       - sudo kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n zitadel-system svc/zitadel-proxy 443:443
 
+  authn:port-forward:
+    desc: Port-forward the authn-webhook service to localhost:8443
+    cmds:
+      - kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n {{.APP_NAMESPACE}} svc/authn-webhook 8090:8090
+
   ci:deploy:
     desc: Deploy all three services using the CI overlay
     silent: true

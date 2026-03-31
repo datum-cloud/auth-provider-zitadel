@@ -118,7 +118,7 @@ and manages the auth provider lifecycle.`,
 	cmd.Flags().StringVar(&cfg.UpstreamClusterKubeconfig, "upstream-kubeconfig", "", "Path to the kubeconfig file for the upstream cluster. If empty, uses the default kubeconfig.")
 	cmd.Flags().StringVar(&cfg.CoreControlPlaneKubeconfig, "core-control-plane-kubeconfig", "", "Path to the kubeconfig file for the core control plane cluster. If empty, uses the default kubeconfig.")
 	cmd.Flags().StringVar(&cfg.ServerConfigFile, "server-config", "", "path to the server config file")
-	cmd.Flags().StringVar(&cfg.EmailAddressSuffix, "email-address-suffix", "iam.miloapis.com", "The suffix of the email address for the machine account.")
+	cmd.Flags().StringVar(&cfg.EmailAddressSuffix, "email-address-suffix", "identity.miloapis.com", "The suffix of the email address for the machine account.")
 	cmd.Flags().StringVar(&cfg.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 
 	// Leader election flags

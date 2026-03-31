@@ -19,6 +19,7 @@ spec:
             name: deactivation-ma
           status:
             state: Active
+            email: deactivation-ma@single.identity.miloapis.com
             conditions:
             - type: Ready
               status: "True"
@@ -27,7 +28,7 @@ spec:
           set -e
           # Compute username
           MA_UID=$(kubectl get machineaccount deactivation-ma -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="${MA_UID}@${NAMESPACE}.single.iam.miloapis.com"
+          MA_USERNAME="deactivation-ma@single.identity.miloapis.com"
           echo "$MA_USERNAME" > /tmp/ma_username.txt
 
           # Create Key without publicKey payload

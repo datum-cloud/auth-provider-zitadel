@@ -258,7 +258,8 @@ func (r *MachineAccountController) SetupWithManager(mgr mcmanager.Manager) error
 }
 
 // computeEmailAddress computes the email address for a machine account
-// EmailAddress is {metadata.name}@{metadata.namespace}.{project.metadata.name}.{EmailAddressSuffix}
+// EmailAddress is {metadata.name}@{project-name}.{EmailAddressSuffix}
 func (r *MachineAccountController) computeEmailAddress(machineAccount *iammiloapiscomv1alpha1.MachineAccount, req mcreconcile.Request) string {
-	return string(machineAccount.GetUID()) + "@" + machineAccount.GetNamespace() + "." + req.ClusterName + "." + r.EmailAddressSuffix
+	projectName := strings.TrimPrefix(req.ClusterName, "/")
+	return machineAccount.GetName() + "@" + projectName + "." + r.EmailAddressSuffix
 }

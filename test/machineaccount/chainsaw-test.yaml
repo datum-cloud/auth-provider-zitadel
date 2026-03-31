@@ -29,6 +29,7 @@ spec:
               namespace: ($namespace)
             status:
               state: Active
+              email: active-machineaccount@single.identity.miloapis.com
       - assert:
           # Expect the "inactive" account to be in Inactive state.
           resource:
@@ -39,6 +40,7 @@ spec:
               namespace: ($namespace)
             status:
               state: Inactive
+              email: inactive-machineaccount@single.identity.miloapis.com
 
       # --- Step 3 : Flip desired states via patch -----------------------------------
       - patch:
@@ -70,6 +72,7 @@ spec:
               namespace: ($namespace)
             status:
               state: Inactive
+              email: active-machineaccount@single.identity.miloapis.com
       - assert:
           resource:
             apiVersion: iam.miloapis.com/v1alpha1
@@ -79,6 +82,7 @@ spec:
               namespace: ($namespace)
             status:
               state: Active
+              email: inactive-machineaccount@single.identity.miloapis.com
 
       # --- Verify Zitadel state after first flip -----------------------------------
       - script:
