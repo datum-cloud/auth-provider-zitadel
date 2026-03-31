@@ -171,7 +171,9 @@ func (r *ProjectController) SetupWithManager(mgr ctrl.Manager) error {
 	projectFin := &projectFinalizer{
 		Zitadel: r.Zitadel,
 	}
-	r.Finalizers.Register(projectFinalizerKey, projectFin)
+	if err := r.Finalizers.Register(projectFinalizerKey, projectFin); err != nil {
+		return fmt.Errorf("register project finalizer: %w", err)
+	}
 	r.Client = mgr.GetClient()
 
 	return ctrl.NewControllerManagedBy(mgr).

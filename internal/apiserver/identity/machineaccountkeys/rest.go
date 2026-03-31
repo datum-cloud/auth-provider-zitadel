@@ -54,7 +54,7 @@ func (r *REST) getProjectID(ctx context.Context) (string, bool) {
 	return "", false
 }
 
-var _ rest.Creater = &REST{}
+var _ rest.Creater = &REST{} //nolint:misspell
 var _ rest.Getter = &REST{}
 var _ rest.Lister = &REST{}
 var _ rest.Storage = &REST{}

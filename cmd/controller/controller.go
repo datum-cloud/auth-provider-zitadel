@@ -393,7 +393,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	}
 
 	// Initialise Zitadel clients
-	tokenSource, err := profile.NewJWTProfileTokenSourceFromKeyFile(
+	tokenSource, err := profile.NewJWTProfileTokenSourceFromKeyFile( //nolint:staticcheck
 		context.Background(),
 		cfg.Zitadel.BaseURL,
 		cfg.Zitadel.MachineAccountKeyPath,

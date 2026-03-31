@@ -90,7 +90,7 @@ func NewSDK(ctx context.Context, cfg SDKConfig) (*SDKClient, error) {
 	cl, err := client.New(ctx, conf,
 		client.WithAuth(func(ctx context.Context, _ string) (oauth2.TokenSource, error) {
 			// We ignore the SDK-provided issuer and use the explicit cfg.Issuer instead.
-			ts, err := profile.NewJWTProfileTokenSourceFromKeyFile(
+			ts, err := profile.NewJWTProfileTokenSourceFromKeyFile( //nolint:staticcheck
 				ctx,
 				cfg.Issuer, // full https://... from config
 				cfg.KeyPath,
@@ -624,7 +624,7 @@ func (c *SDKClient) ListMachineKeysInOrganization(ctx context.Context, orgID, us
 		return nil, fmt.Errorf("list keys: %w", err)
 	}
 
-	var keys []*MachineKey
+	keys := make([]*MachineKey, 0, len(resp.GetResult()))
 	for _, key := range resp.GetResult() {
 		mk := &MachineKey{
 			ID:          key.GetId(),
