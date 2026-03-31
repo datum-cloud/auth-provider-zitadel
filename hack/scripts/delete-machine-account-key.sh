@@ -13,7 +13,7 @@ set -euo pipefail
 PROJECT_ID="single"
 
 # The machine account username (must exist in the project's Zitadel organization)
-MACHINE_ACCOUNT_NAME="f66195e9-067c-4e97-b89d-3f2066c9fed7@default.single.iam.miloapis.com"
+MACHINE_ACCOUNT_NAME="example-service-account@single.identity.miloapis.com"
 
 # The key ID to delete (from Zitadel)
 KEY_ID="366525074351587355"

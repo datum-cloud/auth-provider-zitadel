@@ -94,7 +94,7 @@ func (r *REST) Create(
 	}
 
 	// Validate required fields
-	if mak.Spec.MachineAccountName == "" {
+	if mak.Spec.MachineAccountUserName == "" {
 		klog.ErrorS(nil, "Missing required field: machineAccountName")
 		return nil, apierrors.NewBadRequest("machineAccountName is required")
 	}
@@ -107,14 +107,14 @@ func (r *REST) Create(
 	}
 
 	// Look up the machine account user by username in the organization
-	user, err := r.Z.GetMachineUserByUsername(ctx, orgID, mak.Spec.MachineAccountName)
+	user, err := r.Z.GetMachineUserByUsername(ctx, orgID, mak.Spec.MachineAccountUserName)
 	if err != nil {
-		klog.ErrorS(err, "Failed to look up machine account user", "orgID", orgID, "username", mak.Spec.MachineAccountName)
+		klog.ErrorS(err, "Failed to look up machine account user", "orgID", orgID, "username", mak.Spec.MachineAccountUserName)
 		return nil, apierrors.NewInternalError(fmt.Errorf("failed to look up machine account"))
 	}
 
 	if user == nil {
-		klog.InfoS("Machine account user not found", "orgID", orgID, "username", mak.Spec.MachineAccountName)
+		klog.InfoS("Machine account user not found", "orgID", orgID, "username", mak.Spec.MachineAccountUserName)
 		return nil, apierrors.NewNotFound(machineAccountKeysGR, mak.Name)
 	}
 
@@ -126,11 +126,11 @@ func (r *REST) Create(
 		publicKeyBytes = []byte(mak.Spec.PublicKey)
 		// Validate public key format and content only if provided
 		if err := validatePublicKey(publicKeyBytes); err != nil {
-			klog.ErrorS(err, "Invalid public key", "orgID", orgID, "username", mak.Spec.MachineAccountName)
+			klog.ErrorS(err, "Invalid public key", "orgID", orgID, "username", mak.Spec.MachineAccountUserName)
 			return nil, apierrors.NewBadRequest(fmt.Sprintf("invalid public key: %v", err))
 		}
 	} else {
-		klog.V(2).Infof("No public key provided, Zitadel will generate one for machine account: %s", mak.Spec.MachineAccountName)
+		klog.V(2).Infof("No public key provided, Zitadel will generate one for machine account: %s", mak.Spec.MachineAccountUserName)
 	}
 
 	// Validate expiration date if provided (optional - Zitadel uses default if not provided)
@@ -138,11 +138,11 @@ func (r *REST) Create(
 	if mak.Spec.ExpirationDate != nil {
 		expirationDate = &mak.Spec.ExpirationDate.Time
 		if expirationDate.Before(time.Now()) {
-			klog.ErrorS(nil, "Expiration date is in the past", "orgID", orgID, "username", mak.Spec.MachineAccountName)
+			klog.ErrorS(nil, "Expiration date is in the past", "orgID", orgID, "username", mak.Spec.MachineAccountUserName)
 			return nil, apierrors.NewBadRequest("expiration date must be in the future")
 		}
 	} else {
-		klog.V(2).Infof("No expiration date provided, Zitadel will use default for machine account: %s", mak.Spec.MachineAccountName)
+		klog.V(2).Infof("No expiration date provided, Zitadel will use default for machine account: %s", mak.Spec.MachineAccountUserName)
 	}
 
 	// Register the key in Zitadel
@@ -158,7 +158,7 @@ func (r *REST) Create(
 	mak.Status.AuthProviderKeyID = keyID
 	mak.Status.PrivateKey = string(keyContent)
 
-	klog.V(2).Infof("Machine account key created successfully: keyID=%s, machineAccount=%s, org=%s", keyID, mak.Spec.MachineAccountName, orgID)
+	klog.V(2).Infof("Machine account key created successfully: keyID=%s, machineAccount=%s, org=%s", keyID, mak.Spec.MachineAccountUserName, orgID)
 
 	return mak, nil
 }
@@ -232,9 +232,9 @@ func (r *REST) List(
 	var machineAccountName string
 
 	// Get machine account name from field selector
-	// kubectl usage: kubectl get machineaccountkeys --field-selector spec.machineAccountName=<name>
+	// kubectl usage: kubectl get machineaccountkeys --field-selector spec.machineAccountUserName=<name>
 	if options != nil && options.FieldSelector != nil && !options.FieldSelector.Empty() {
-		if val, found := options.FieldSelector.RequiresExactMatch("spec.machineAccountName"); found {
+		if val, found := options.FieldSelector.RequiresExactMatch("spec.machineAccountUserName"); found {
 			machineAccountName = val
 			klog.V(2).Infof("Got machineAccountName from fieldSelector: %q", machineAccountName)
 		}
@@ -283,7 +283,7 @@ func (r *REST) List(
 					CreationTimestamp: metav1.NewTime(mk.CreatedDate),
 				},
 				Spec: milov1alpha1.MachineAccountKeySpec{
-					MachineAccountName: machineAccountName,
+					MachineAccountUserName: machineAccountName,
 					// Include optional fields if they exist
 					ExpirationDate: nil,
 				},
@@ -344,7 +344,7 @@ func (r *REST) ConvertToTable(ctx context.Context, obj runtime.Object, tableOpti
 			table.Rows = append(table.Rows, metav1.TableRow{
 				Cells: []interface{}{
 					item.Name,
-					item.Spec.MachineAccountName,
+					item.Spec.MachineAccountUserName,
 					item.Status.AuthProviderKeyID,
 					item.CreationTimestamp.String(),
 					expiresStr,
@@ -363,7 +363,7 @@ func (r *REST) ConvertToTable(ctx context.Context, obj runtime.Object, tableOpti
 		table.Rows = append(table.Rows, metav1.TableRow{
 			Cells: []interface{}{
 				mak.Name,
-				mak.Spec.MachineAccountName,
+				mak.Spec.MachineAccountUserName,
 				mak.Status.AuthProviderKeyID,
 				mak.CreationTimestamp.String(),
 				expiresStr,

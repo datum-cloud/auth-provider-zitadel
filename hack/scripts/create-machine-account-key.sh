@@ -29,7 +29,7 @@ echo "Sending request to $API_SERVER_URL..."
 
 # Make the request with hardcoded payload
 # Modify the spec fields as needed:
-# - machineAccountName: required
+# - machineAccountUserName: required
 # - publicKey: optional (PEM format, RSA or ECDSA - if omitted, Zitadel generates one)
 # - expirationDate: optional (ISO 8601 format, e.g., "2029-12-31T23:59:59Z" - if omitted, Zitadel uses default)
 
@@ -44,7 +44,7 @@ PAYLOAD=$(cat <<'PAYLOAD_EOF'
     "name": "key-TIMESTAMP"
   },
   "spec": {
-    "machineAccountName": "f66195e9-067c-4e97-b89d-3f2066c9fed7@default.single.iam.miloapis.com"
+    "machineAccountUserName": "example-service-account@single.identity.miloapis.com"
   }
 }
 PAYLOAD_EOF

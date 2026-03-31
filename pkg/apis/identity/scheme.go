@@ -21,7 +21,7 @@ func Install(s *runtime.Scheme) {
 		},
 		func(label, value string) (string, string, error) {
 			switch label {
-			case "spec.machineAccountName", "metadata.name", "metadata.namespace":
+			case "spec.machineAccountUserName", "metadata.name", "metadata.namespace":
 				return label, value, nil
 			default:
 				return "", "", nil

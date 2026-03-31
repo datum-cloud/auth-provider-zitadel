@@ -33,8 +33,8 @@ spec:
 
           # Create Key without publicKey payload
           POST_RESPONSE=$(jq -n \
-            --arg machineAccountName "$MA_USERNAME" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"gen-key"},spec:{machineAccountName:$machineAccountName}}' | \
+            --arg machineAccountUserName "$MA_USERNAME" \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"gen-key"},spec:{machineAccountUserName:$machineAccountUserName}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \

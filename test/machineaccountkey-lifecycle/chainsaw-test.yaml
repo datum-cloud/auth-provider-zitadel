@@ -42,9 +42,9 @@ spec:
           # Create the key via identity.miloapis.com, providing our own public key
           PUB_KEY=$(cat /tmp/deact-pub.pem)
           POST_RESPONSE=$(jq -n \
-            --arg machineAccountName "$MA_USERNAME" \
+            --arg machineAccountUserName "$MA_USERNAME" \
             --arg publicKey "$PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"deact-key"},spec:{machineAccountName:$machineAccountName,publicKey:$publicKey}}' | \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"deact-key"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \

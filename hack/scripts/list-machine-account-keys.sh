@@ -14,7 +14,7 @@ PROJECT_ID="single"
 
 # The machine account username (must exist in the project's Zitadel organization)
 # Leave empty to list all keys in the project
-MACHINE_ACCOUNT_NAME="6f07d882-5f3d-45e7-8d23-4131c2508448@default.single.iam.miloapis.com"
+MACHINE_ACCOUNT_NAME="example-service-account@single.identity.miloapis.com"
 
 # API server URL (leave empty to use kubectl proxy on localhost:8080)
 API_SERVER_URL="http://localhost:8080"
@@ -35,7 +35,7 @@ echo "Sending request to $API_SERVER_URL..."
 # Build the URL with optional fieldSelector query parameter
 URL="$API_SERVER_URL/apis/identity.miloapis.com/v1alpha1/machineaccountkeys"
 if [ -n "$MACHINE_ACCOUNT_NAME" ]; then
-    URL="$URL?fieldSelector=spec.machineAccountName=$MACHINE_ACCOUNT_NAME"
+    URL="$URL?fieldSelector=spec.machineAccountUserName=$MACHINE_ACCOUNT_NAME"
 fi
 
 # Make the request

@@ -46,9 +46,9 @@ spec:
           KEY1_PUB_KEY=$(cat /tmp/key1-pub.pem)
 
           POST_RESPONSE_1=$(jq -n \
-            --arg machineAccountName "$MA_USERNAME" \
+            --arg machineAccountUserName "$MA_USERNAME" \
             --arg publicKey "$KEY1_PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key1"},spec:{machineAccountName:$machineAccountName,publicKey:$publicKey}}' | \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key1"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
@@ -71,9 +71,9 @@ spec:
           KEY2_PUB_KEY=$(cat /tmp/key2-pub.pem)
 
           POST_RESPONSE_2=$(jq -n \
-            --arg machineAccountName "$MA_USERNAME" \
+            --arg machineAccountUserName "$MA_USERNAME" \
             --arg publicKey "$KEY2_PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key2"},spec:{machineAccountName:$machineAccountName,publicKey:$publicKey}}' | \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key2"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
@@ -98,7 +98,7 @@ spec:
           MA_USERNAME=$(cat /tmp/ma_username.txt)
 
           LIST_RESPONSE=$(curl -s -G "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
-            --data-urlencode "fieldSelector=spec.machineAccountName=${MA_USERNAME}" \
+            --data-urlencode "fieldSelector=spec.machineAccountUserName=${MA_USERNAME}" \
             -H "Impersonate-User: system:admin" \
             -H "Impersonate-Group: system:masters" \
             -H "Impersonate-Extra-project: single")
@@ -137,7 +137,7 @@ spec:
           KEY2_ID=$(cat /tmp/key2_id.txt)
 
           LIST_RESPONSE=$(curl -s -G "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
-            --data-urlencode "fieldSelector=spec.machineAccountName=${MA_USERNAME}" \
+            --data-urlencode "fieldSelector=spec.machineAccountUserName=${MA_USERNAME}" \
             -H "Impersonate-User: system:admin" \
             -H "Impersonate-Group: system:masters" \
             -H "Impersonate-Extra-project: single")
