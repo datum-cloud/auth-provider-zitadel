@@ -120,13 +120,13 @@ spec:
           value: "json"
         # Zitadel configuration environment variables
         - name: ZITADEL_BASE_URL
-          value: "https://zitadel.datum-cloud.com"
+          value: "https://auth.staging.env.datum.net"
         - name: ZITADEL_MACHINE_ACCOUNT_KEY_PATH
           value: "/etc/zitadel/machine-account-key.json"
         - name: ZITADEL_SDK_DOMAIN
-          value: "zitadel.datum-cloud.com"
+          value: "auth.staging.env.datum.net"
         - name: ZITADEL_SDK_ISSUER
-          value: "https://zitadel.datum-cloud.com"
+          value: "https://auth.staging.env.datum.net"
         - name: ZITADEL_DEFAULT_MACHINE_KEY_EXPIRATION
           value: "87600h"
         # Controller manager configuration environment variables
