@@ -23,15 +23,51 @@ type IDPLink struct {
 	IDPUserName string
 }
 
+// User represents a Zitadel user with minimal fields.
+type User struct {
+	ID       string
+	Username string
+	Email    string
+	State    string // e.g. "ACTIVE", "INACTIVE"
+}
+
+// Organization represents a Zitadel organization.
+type Organization struct {
+	ID   string
+	Name string
+}
+
+// MachineKey represents a machine account key with complete information.
+type MachineKey struct {
+	ID             string     // Key ID
+	CreatedDate    time.Time  // When the key was created
+	ExpirationDate *time.Time // When the key expires (nil if no expiration)
+}
+
 // API is the minimal surface needed by our storage and controllers.
 type API interface {
-	// identity management
+	// session management
 	ListSessions(ctx context.Context, userID string) ([]Session, error)
 	GetSession(ctx context.Context, sessionID string) (*Session, error)
 	DeleteSession(ctx context.Context, userID, sessionID string) error
 	ListIDPLinks(ctx context.Context, userID string) ([]IDPLink, error)
 
-	// machine key lifecycle
-	AddMachineKey(ctx context.Context, userID string, publicKey []byte, expirationDate *time.Time) (keyID string, err error)
-	RemoveMachineKey(ctx context.Context, userID, keyID string) error
+	// organization management
+	CreateOrganization(ctx context.Context, name string) (orgID string, err error)
+	CreateOrganizationWithID(ctx context.Context, name, customOrgID string) (orgID string, err error)
+	DeleteOrganization(ctx context.Context, orgID string) error
+	GetOrganization(ctx context.Context, orgID string) (*Organization, error)
+
+	// user management
+	GetUserByID(ctx context.Context, userID string) (*User, error)
+	GetMachineUserByUsername(ctx context.Context, orgID, username string) (*User, error)
+	AddMachineUserInOrganization(ctx context.Context, orgID, userID, username, displayName string) (createdUserID string, err error)
+	DeleteUser(ctx context.Context, userID string) error
+	DeactivateUser(ctx context.Context, orgID, userID string) error
+	ReactivateUser(ctx context.Context, orgID, userID string) error
+
+	// machine key in organization
+	AddMachineKeyInOrganization(ctx context.Context, orgID, userID string, publicKey []byte, expirationDate *time.Time) (keyID string, keyContent []byte, err error)
+	ListMachineKeysInOrganization(ctx context.Context, orgID, userID string) ([]*MachineKey, error)
+	RemoveMachineKeyInOrganization(ctx context.Context, orgID, userID, keyID string) error
 }

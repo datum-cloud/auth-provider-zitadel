@@ -27,6 +27,8 @@ spec:
               value: "front-proxy-client"
             - name: REQUESTHEADER_UID_HEADERS
               value: "X-Remote-Uid,X-Remote-Extra-User-Uid"
+            - name: ENABLE_IMPERSONATION_FALLBACK
+              value: "true"
           volumeMounts:
             - name: machine-account-key
               mountPath: /etc/zitadel

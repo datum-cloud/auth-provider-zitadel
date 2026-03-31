@@ -1,0 +1,88 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: machineaccountkey-generation
+spec:
+  # This test verifies that creating a MachineAccountKey without a publicKey 
+  # returns a valid generated privateKey in the status payload, which can be 
+  # successfully used for token exchange.
+  steps:
+  - name: create-resources
+    try:
+    - apply:
+        file: resources/machineaccount.yaml
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          status:
+            state: Active
+            conditions:
+            - type: Ready
+              status: "True"
+    - script:
+        content: |
+          set -e
+          # Compute username
+          MA_UID=$(kubectl get machineaccount deactivation-ma -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+          MA_USERNAME="${MA_UID}@${NAMESPACE}.single.iam.miloapis.com"
+          echo "$MA_USERNAME" > /tmp/ma_username.txt
+
+          # Create Key without publicKey payload
+          POST_RESPONSE=$(jq -n \
+            --arg machineAccountName "$MA_USERNAME" \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"gen-key"},spec:{machineAccountName:$machineAccountName}}' | \
+            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
+              -H "Content-Type: application/json" \
+              -H "Impersonate-User: system:admin" \
+              -H "Impersonate-Group: system:masters" \
+              -H "Impersonate-Extra-project: single" \
+              -d @-)
+
+          KEY_ID=$(printf '%s\n' "$POST_RESPONSE" | jq -r '.status.authProviderKeyID')
+          if [ -z "$KEY_ID" ] || [ "$KEY_ID" == "null" ]; then
+            echo "ERROR: Failed to extract authProviderKeyID from response:"
+            printf '%s\n' "$POST_RESPONSE"
+            exit 1
+          fi
+          echo "KEY_ID: $KEY_ID"
+          echo "$KEY_ID" > /tmp/gen_key_id.txt
+
+          PRIVATE_KEY_JSON=$(printf '%s\n' "$POST_RESPONSE" | jq -r '.status.privateKey')
+          if [ -z "$PRIVATE_KEY_JSON" ] || [ "$PRIVATE_KEY_JSON" == "null" ]; then
+            echo "ERROR: Failed to extract generated privateKey from response payload:"
+            printf '%s\n' "$POST_RESPONSE"
+            exit 1
+          fi
+
+          printf '%s\n' "$PRIVATE_KEY_JSON" | base64 -d > /tmp/zitadel-key-gen.json || printf '%s\n' "$PRIVATE_KEY_JSON" > /tmp/zitadel-key-gen.json
+          
+          echo "Successfully created MachineAccountKey and captured the privateKey payload!"
+
+  - name: verify-generated-key-works
+    try:
+    - script:
+        content: |
+          set -e
+          # Use zitadel-tools to generate JWT profile from the saved key JSON
+          # This ensures the generated key config JSON from Zitadel is completely valid
+          ../../bin/zitadel-tools key2jwt \
+            --audience="https://zitadel.zitadel-system.svc.cluster.local" \
+            --key="/tmp/zitadel-key-gen.json" > /tmp/jwt-gen.token
+
+          # Get access token from ZITADEL
+          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
+            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
+            --data-urlencode "assertion=$(cat /tmp/jwt-gen.token)")
+
+          ACCESS_TOKEN=$(printf '%s\n' "$RESPONSE" | jq -r '.access_token')
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" == "null" ]; then
+            echo "ERROR: Failed to obtain access token with the generated key. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Successfully obtained access token using the auto-generated private key from Zitadel payload!"

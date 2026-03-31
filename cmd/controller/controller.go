@@ -59,6 +59,7 @@ import (
 	zitadelHtppClient "go.miloapis.com/auth-provider-zitadel/internal/zitadel"
 	pkgzitadel "go.miloapis.com/auth-provider-zitadel/pkg/zitadel"
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
+	resourcemanagermiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/resourcemanager/v1alpha1"
 
 	milomulticluster "go.miloapis.com/milo/pkg/multicluster-runtime"
 	miloprovider "go.miloapis.com/milo/pkg/multicluster-runtime/milo"
@@ -75,6 +76,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(iammiloapiscomv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(resourcemanagermiloapiscomv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -390,7 +392,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		os.Exit(1)
 	}
 
-	// Initialise Zitadel client
+	// Initialise Zitadel clients
 	tokenSource, err := profile.NewJWTProfileTokenSourceFromKeyFile(
 		context.Background(),
 		cfg.Zitadel.BaseURL,
@@ -403,16 +405,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	}
 	zitadelHtppClient := zitadelHtppClient.NewClientWithTokenSource(cfg.Zitadel.BaseURL, tokenSource)
 
-	// Setup MachineAccountController on multicluster manager (for project control planes)
-	if err = (&controller.MachineAccountController{
-		Zitadel:            zitadelHtppClient,
-		EmailAddressSuffix: cfg.EmailAddressSuffix,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "MachineAccount")
-		os.Exit(1)
-	}
-
-	// Build the SDK client for gRPC-based operations (MachineAccountKey controller).
+	// Build the SDK client for gRPC-based operations (MachineAccount, MachineAccountKey, and Project controllers).
 	// SDKDomain and SDKIssuer default to the values derived from BaseURL when not set.
 	sdkDomain := cfg.Zitadel.SDKDomain
 	if sdkDomain == "" {
@@ -433,11 +426,20 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		os.Exit(1)
 	}
 
-	// Setup MachineAccountKeyController on multicluster manager (for project control planes)
-	if err = (&controller.MachineAccountKeyController{
-		Zitadel: zitadelSDKClient,
+	// Setup MachineAccountController on multicluster manager (for project control planes)
+	if err = (&controller.MachineAccountController{
+		Zitadel:            zitadelSDKClient,
+		EmailAddressSuffix: cfg.EmailAddressSuffix,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "MachineAccountKey")
+		setupLog.Error(err, "unable to create controller", "controller", "MachineAccount")
+		os.Exit(1)
+	}
+
+	// Setup ProjectController on core control plane manager
+	if err = (&controller.ProjectController{
+		Zitadel: zitadelSDKClient,
+	}).SetupWithManager(coreControlPlaneMgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Project")
 		os.Exit(1)
 	}
 

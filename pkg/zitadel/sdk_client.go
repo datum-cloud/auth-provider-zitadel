@@ -3,13 +3,17 @@ package zitadel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/zitadel/oidc/v3/pkg/client/profile"
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
+	"github.com/zitadel/zitadel-go/v3/pkg/client/middleware"
+	filterv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/filter/v2"
 	idpv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/idp/v2"
+	orgv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/org/v2"
 	sessionv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/session/v2"
 	userv2 "github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/user/v2"
 	"github.com/zitadel/zitadel-go/v3/pkg/zitadel"
@@ -43,6 +47,7 @@ type SDKClient struct {
 	sess   sessionv2.SessionServiceClient
 	user   userv2.UserServiceClient
 	idp    idpv2.IdentityProviderServiceClient
+	org    orgv2.OrganizationServiceClient
 	config SDKConfig
 }
 
@@ -114,11 +119,12 @@ func NewSDK(ctx context.Context, cfg SDKConfig) (*SDKClient, error) {
 		return nil, err
 	}
 
-	klog.V(2).Info("NewSDK: SessionServiceV2, UserServiceV2, and IdpServiceV2 clients ready")
+	klog.V(2).Info("NewSDK: SessionServiceV2, UserServiceV2, IdpServiceV2, and OrganizationServiceV2 clients ready")
 	return &SDKClient{
 		sess:   cl.SessionServiceV2(),
 		user:   cl.UserServiceV2(),
 		idp:    cl.IdpServiceV2(),
+		org:    cl.OrganizationServiceV2(),
 		config: cfg,
 	}, nil
 }
@@ -296,11 +302,80 @@ func localIdentityUsername(user *userv2.User) string {
 	return strings.TrimSpace(user.GetUsername())
 }
 
-// AddMachineKey registers a public key for a machine user in Zitadel.
-// publicKey must be a PEM-encoded RSA public key as raw bytes.
-// expirationDate is optional; pass nil for a non-expiring key.
-// Returns the Zitadel-assigned key ID to be stored in status.authProviderKeyId.
-func (c *SDKClient) AddMachineKey(ctx context.Context, userID string, publicKey []byte, expirationDate *time.Time) (string, error) {
+// CreateOrganization creates a new organization in Zitadel with a custom name.
+// Returns the organization ID.
+func (c *SDKClient) CreateOrganization(ctx context.Context, name string) (string, error) {
+	klog.V(2).Infof("CreateOrganization: creating org name=%q", name)
+
+	resp, err := c.org.AddOrganization(ctx, &orgv2.AddOrganizationRequest{
+		Name: name,
+	})
+	if err != nil {
+		klog.Errorf("CreateOrganization: failed to create organization: %v", err)
+		return "", fmt.Errorf("add organization: %w", err)
+	}
+
+	orgID := resp.GetOrganizationId()
+	klog.V(2).Infof("CreateOrganization: organization created with id=%q, name=%q", orgID, name)
+	return orgID, nil
+}
+
+// CreateOrganizationWithID creates a new organization in Zitadel with a custom name and ID.
+// Returns the organization ID.
+func (c *SDKClient) CreateOrganizationWithID(ctx context.Context, name, customOrgID string) (string, error) {
+	klog.V(2).Infof("CreateOrganizationWithID: creating org name=%q with customOrgID=%q", name, customOrgID)
+
+	resp, err := c.org.AddOrganization(ctx, &orgv2.AddOrganizationRequest{
+		Name:  name,
+		OrgId: &customOrgID,
+	})
+	if err != nil {
+		klog.Errorf("CreateOrganizationWithID: failed to create organization: %v", err)
+		return "", fmt.Errorf("add organization with id: %w", err)
+	}
+
+	orgID := resp.GetOrganizationId()
+	klog.V(2).Infof("CreateOrganizationWithID: organization created with id=%q, name=%q", orgID, name)
+	return orgID, nil
+}
+
+// AddMachineUserInOrganization creates a machine user within a specific organization.
+// Returns the user ID.
+func (c *SDKClient) AddMachineUserInOrganization(ctx context.Context, orgID, userID, username, displayName string) (string, error) {
+	klog.V(2).Infof("AddMachineUserInOrganization: creating machine user orgID=%q, userID=%q, username=%q, displayName=%q",
+		orgID, userID, username, displayName)
+
+	// Create machine user via gRPC userv2.CreateUser with organization scope
+	req := &userv2.CreateUserRequest{
+		OrganizationId: orgID,
+		UserId:         &userID,
+		Username:       &username,
+		UserType: &userv2.CreateUserRequest_Machine_{
+			Machine: &userv2.CreateUserRequest_Machine{
+				Name:        displayName,
+				Description: nil,
+			},
+		},
+	}
+
+	resp, err := c.user.CreateUser(ctx, req)
+	if err != nil {
+		klog.Errorf("AddMachineUserInOrganization: failed to create machine user: %v", err)
+		return "", fmt.Errorf("create machine user in org: %w", err)
+	}
+
+	createdUserID := resp.GetId()
+	klog.V(2).Infof("AddMachineUserInOrganization: machine user created with id=%q in org=%q",
+		createdUserID, orgID)
+	return createdUserID, nil
+}
+
+// AddMachineKeyInOrganization registers a public key for a machine user
+// within a specific organization context.
+// Returns the key ID and key content (private key material from Zitadel).
+func (c *SDKClient) AddMachineKeyInOrganization(ctx context.Context, orgID, userID string, publicKey []byte, expirationDate *time.Time) (keyID string, keyContent []byte, err error) {
+	klog.V(2).Infof("AddMachineKeyInOrganization: orgID=%q, userID=%q", orgID, userID)
+
 	req := &userv2.AddKeyRequest{
 		UserId:    userID,
 		PublicKey: publicKey,
@@ -308,29 +383,286 @@ func (c *SDKClient) AddMachineKey(ctx context.Context, userID string, publicKey 
 	if expirationDate != nil {
 		req.ExpirationDate = pb.New(*expirationDate)
 	} else {
-		// ZITADEL V2 API requires an expiration date.
 		req.ExpirationDate = pb.New(time.Now().Add(c.config.DefaultMachineKeyExpiration))
 	}
 
-	resp, err := c.user.AddKey(ctx, req)
+	// Set organization context in gRPC metadata using Zitadel's official middleware
+	ctxWithOrg := middleware.SetOrgID(ctx, orgID)
+
+	resp, err := c.user.AddKey(ctxWithOrg, req)
 	if err != nil {
-		return "", err
+		klog.Errorf("AddMachineKeyInOrganization: failed to add key: %v", err)
+		return "", nil, fmt.Errorf("add key in org: %w", err)
 	}
-	return resp.GetKeyId(), nil
+
+	keyID = resp.GetKeyId()
+	keyContent = resp.GetKeyContent()
+	klog.V(2).Infof("AddMachineKeyInOrganization: key registered with id=%q in org=%q", keyID, orgID)
+	return keyID, keyContent, nil
 }
 
-// RemoveMachineKey revokes a machine user key from Zitadel.
+// DeleteOrganization removes a Zitadel organization.
 // A gRPC NotFound error is swallowed and treated as success (idempotent).
-func (c *SDKClient) RemoveMachineKey(ctx context.Context, userID, keyID string) error {
-	_, err := c.user.RemoveKey(ctx, &userv2.RemoveKeyRequest{
+func (c *SDKClient) DeleteOrganization(ctx context.Context, orgID string) error {
+	klog.V(2).Infof("DeleteOrganization: deleting org id=%q", orgID)
+
+	_, err := c.org.DeleteOrganization(ctx, &orgv2.DeleteOrganizationRequest{
+		OrganizationId: orgID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			klog.V(2).Infof("DeleteOrganization: org id=%q not found (idempotent)", orgID)
+			return nil
+		}
+		klog.Errorf("DeleteOrganization: failed to delete org id=%q: %v", orgID, err)
+		return fmt.Errorf("delete organization: %w", err)
+	}
+	klog.V(2).Infof("DeleteOrganization: org id=%q deleted", orgID)
+	return nil
+}
+
+// GetOrganization retrieves a Zitadel organization by ID.
+// Returns nil if the organization is not found.
+// Uses ListOrganizations since there's no dedicated GetOrganizationByID endpoint.
+func (c *SDKClient) GetOrganization(ctx context.Context, orgID string) (*Organization, error) {
+	klog.V(2).Infof("GetOrganization: fetching org id=%q", orgID)
+
+	resp, err := c.org.ListOrganizations(ctx, &orgv2.ListOrganizationsRequest{
+		Queries: []*orgv2.SearchQuery{
+			{Query: &orgv2.SearchQuery_IdQuery{
+				IdQuery: &orgv2.OrganizationIDQuery{Id: orgID},
+			}},
+		},
+	})
+	if err != nil {
+		klog.Errorf("GetOrganization: failed to list org id=%q: %v", orgID, err)
+		return nil, fmt.Errorf("list organizations: %w", err)
+	}
+
+	if len(resp.GetResult()) == 0 {
+		klog.V(2).Infof("GetOrganization: org id=%q not found", orgID)
+		return nil, nil
+	}
+
+	org := resp.GetResult()[0]
+	result := &Organization{
+		ID:   org.GetId(),
+		Name: org.GetName(),
+	}
+	klog.V(2).Infof("GetOrganization: org id=%q found (name=%q)", result.ID, result.Name)
+	return result, nil
+}
+
+// GetMachineUserByUsername retrieves a machine user by username within an organization.
+// Returns nil if the user is not found.
+func (c *SDKClient) GetMachineUserByUsername(ctx context.Context, orgID, username string) (*User, error) {
+	klog.V(2).Infof("GetMachineUserByUsername: fetching user username=%q in org=%q", username, orgID)
+
+	// Search for users in the organization by username
+	resp, err := c.user.ListUsers(ctx, &userv2.ListUsersRequest{
+		Queries: []*userv2.SearchQuery{
+			{Query: &userv2.SearchQuery_UserNameQuery{
+				UserNameQuery: &userv2.UserNameQuery{UserName: username},
+			}},
+			{Query: &userv2.SearchQuery_OrganizationIdQuery{
+				OrganizationIdQuery: &userv2.OrganizationIdQuery{OrganizationId: orgID},
+			}},
+		},
+	})
+	if err != nil {
+		klog.Errorf("GetMachineUserByUsername: failed to list users: %v", err)
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+
+	if len(resp.GetResult()) == 0 {
+		klog.V(2).Infof("GetMachineUserByUsername: user username=%q not found in org=%q", username, orgID)
+		return nil, nil
+	}
+
+	user := resp.GetResult()[0]
+	result := &User{
+		ID:       user.GetUserId(),
+		Username: localIdentityUsername(user),
+		State:    user.GetState().String(),
+	}
+	klog.V(2).Infof("GetMachineUserByUsername: user username=%q found with id=%q in org=%q", username, result.ID, orgID)
+	return result, nil
+}
+
+// GetUserByID retrieves a Zitadel user by ID.
+// Returns nil if the user is not found.
+func (c *SDKClient) GetUserByID(ctx context.Context, userID string) (*User, error) {
+	klog.V(2).Infof("GetUserByID: fetching user id=%q", userID)
+
+	resp, err := c.user.GetUserByID(ctx, &userv2.GetUserByIDRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			klog.V(2).Infof("GetUserByID: user id=%q not found", userID)
+			return nil, nil
+		}
+		klog.Errorf("GetUserByID: failed to get user id=%q: %v", userID, err)
+		return nil, fmt.Errorf("get user by id: %w", err)
+	}
+
+	user := resp.GetUser()
+	if user == nil {
+		klog.V(2).Infof("GetUserByID: user id=%q returned nil user", userID)
+		return nil, nil
+	}
+
+	// Extract email from HumanUser if available; otherwise leave empty for MachineUsers
+	var email string
+	if humanUser := user.GetHuman(); humanUser != nil {
+		if emailObj := humanUser.GetEmail(); emailObj != nil {
+			email = emailObj.GetEmail()
+		}
+	}
+
+	result := &User{
+		ID:       user.GetUserId(),
+		Username: localIdentityUsername(user),
+		Email:    email,
+		State:    user.GetState().String(),
+	}
+	klog.V(2).Infof("GetUserByID: user id=%q found (username=%q)", result.ID, result.Username)
+	return result, nil
+}
+
+// DeleteUser removes a Zitadel user.
+// A gRPC NotFound error is swallowed and treated as success (idempotent).
+func (c *SDKClient) DeleteUser(ctx context.Context, userID string) error {
+	klog.V(2).Infof("DeleteUser: deleting user id=%q", userID)
+
+	_, err := c.user.DeleteUser(ctx, &userv2.DeleteUserRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			klog.V(2).Infof("DeleteUser: user id=%q not found (idempotent)", userID)
+			return nil
+		}
+		klog.Errorf("DeleteUser: failed to delete user id=%q: %v", userID, err)
+		return fmt.Errorf("delete user: %w", err)
+	}
+	klog.V(2).Infof("DeleteUser: user id=%q deleted", userID)
+	return nil
+}
+
+// DeactivateUser deactivates a Zitadel user within an organization.
+// Returns nil if the user is not found (idempotent).
+func (c *SDKClient) DeactivateUser(ctx context.Context, orgID, userID string) error {
+	klog.V(2).Infof("DeactivateUser: deactivating user id=%q in org=%q", userID, orgID)
+
+	// Set organization context in gRPC metadata
+	ctxWithOrg := middleware.SetOrgID(ctx, orgID)
+
+	_, err := c.user.DeactivateUser(ctxWithOrg, &userv2.DeactivateUserRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			klog.V(2).Infof("DeactivateUser: user id=%q not found (idempotent)", userID)
+			return nil
+		}
+		klog.Errorf("DeactivateUser: failed to deactivate user id=%q: %v", userID, err)
+		return fmt.Errorf("deactivate user: %w", err)
+	}
+	klog.V(2).Infof("DeactivateUser: user id=%q deactivated", userID)
+	return nil
+}
+
+// ReactivateUser reactivates a Zitadel user within an organization.
+// Returns nil if the user is not found (idempotent).
+func (c *SDKClient) ReactivateUser(ctx context.Context, orgID, userID string) error {
+	klog.V(2).Infof("ReactivateUser: reactivating user id=%q in org=%q", userID, orgID)
+
+	// Set organization context in gRPC metadata
+	ctxWithOrg := middleware.SetOrgID(ctx, orgID)
+
+	_, err := c.user.ReactivateUser(ctxWithOrg, &userv2.ReactivateUserRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			klog.V(2).Infof("ReactivateUser: user id=%q not found (idempotent)", userID)
+			return nil
+		}
+		klog.Errorf("ReactivateUser: failed to reactivate user id=%q: %v", userID, err)
+		return fmt.Errorf("reactivate user: %w", err)
+	}
+	klog.V(2).Infof("ReactivateUser: user id=%q reactivated", userID)
+	return nil
+}
+
+// ListMachineKeysInOrganization lists all machine keys for a user within an organization.
+// Returns complete key information including ID, type, creation date, and expiration date.
+func (c *SDKClient) ListMachineKeysInOrganization(ctx context.Context, orgID, userID string) ([]*MachineKey, error) {
+	klog.V(2).Infof("ListMachineKeysInOrganization: listing keys for user id=%q in org=%q", userID, orgID)
+
+	// Set organization context in gRPC metadata
+	ctxWithOrg := middleware.SetOrgID(ctx, orgID)
+
+	// List keys for the user filtered by organization and user ID
+	resp, err := c.user.ListKeys(ctxWithOrg, &userv2.ListKeysRequest{
+		Filters: []*userv2.KeysSearchFilter{
+			{
+				Filter: &userv2.KeysSearchFilter_OrganizationIdFilter{
+					OrganizationIdFilter: &filterv2.IDFilter{Id: orgID},
+				},
+			},
+			{
+				Filter: &userv2.KeysSearchFilter_UserIdFilter{
+					UserIdFilter: &filterv2.IDFilter{Id: userID},
+				},
+			},
+		},
+	})
+	if err != nil {
+		klog.Errorf("ListMachineKeysInOrganization: failed to list keys: %v", err)
+		return nil, fmt.Errorf("list keys: %w", err)
+	}
+
+	var keys []*MachineKey
+	for _, key := range resp.GetResult() {
+		mk := &MachineKey{
+			ID:          key.GetId(),
+			CreatedDate: key.GetCreationDate().AsTime(),
+		}
+		// ExpirationDate is optional
+		if key.GetExpirationDate() != nil {
+			expirationTime := key.GetExpirationDate().AsTime()
+			mk.ExpirationDate = &expirationTime
+		}
+		keys = append(keys, mk)
+	}
+
+	klog.V(2).Infof("ListMachineKeysInOrganization: found %d keys for user id=%q in org=%q", len(keys), userID, orgID)
+	return keys, nil
+}
+
+// RemoveMachineKeyInOrganization removes a machine key from a user within an organization.
+// A gRPC NotFound error is swallowed and treated as success (idempotent).
+func (c *SDKClient) RemoveMachineKeyInOrganization(ctx context.Context, orgID, userID, keyID string) error {
+	klog.V(2).Infof("RemoveMachineKeyInOrganization: removing key id=%q from user id=%q in org=%q", keyID, userID, orgID)
+
+	// Set organization context in gRPC metadata
+	ctxWithOrg := middleware.SetOrgID(ctx, orgID)
+
+	_, err := c.user.RemoveKey(ctxWithOrg, &userv2.RemoveKeyRequest{
 		UserId: userID,
 		KeyId:  keyID,
 	})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
+			klog.V(2).Infof("RemoveMachineKeyInOrganization: key id=%q not found (idempotent)", keyID)
 			return nil
 		}
-		return err
+		klog.Errorf("RemoveMachineKeyInOrganization: failed to remove key: %v", err)
+		return fmt.Errorf("remove key: %w", err)
 	}
+
+	klog.V(2).Infof("RemoveMachineKeyInOrganization: key id=%q removed", keyID)
 	return nil
 }

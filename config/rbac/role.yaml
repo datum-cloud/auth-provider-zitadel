@@ -7,7 +7,6 @@ rules:
 - apiGroups:
   - iam.miloapis.com
   resources:
-  - machineaccountkeys
   - machineaccounts
   verbs:
   - create
@@ -20,7 +19,6 @@ rules:
 - apiGroups:
   - iam.miloapis.com
   resources:
-  - machineaccountkeys/finalizers
   - machineaccounts/finalizers
   - userdeactivations/finalizers
   - userdeactivations/status
@@ -30,7 +28,6 @@ rules:
 - apiGroups:
   - iam.miloapis.com
   resources:
-  - machineaccountkeys/status
   - machineaccounts/status
   verbs:
   - get
@@ -63,3 +60,25 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - resourcemanager.miloapis.com
+  resources:
+  - projects
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - resourcemanager.miloapis.com
+  resources:
+  - projects/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resourcemanager.miloapis.com
+  resources:
+  - projects/status
+  verbs:
+  - get
+  - update

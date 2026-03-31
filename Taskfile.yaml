@@ -163,6 +163,8 @@ tasks:
           -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=v0.21.0
         task test-infra:kubectl -- apply \
           -k https://github.com/datum-cloud/milo/config/crd/bases/infrastructure?ref=v0.21.0
+        task test-infra:kubectl -- apply \
+          -k https://github.com/datum-cloud/milo/config/crd/bases/resourcemanager?ref=v0.21.0
         echo "Milo CRDs installed."
 
   ci:port-forward:
@@ -246,6 +248,15 @@ tasks:
         # Cleanup any orphaned port-forwards from previous runs on these specific ports
         lsof -i :18443 -t | xargs kill -9 > /dev/null 2>&1 || true
         lsof -i :19443 -t | xargs kill -9 > /dev/null 2>&1 || true
+        lsof -i :8001 -t | xargs kill -9 > /dev/null 2>&1 || true
+
+        echo "Applying Project resource..."
+        kubectl --context "$KUBE_CONTEXT" apply -f config/samples/resourcemanager/v1alpha/project.yaml
+        kubectl --context "$KUBE_CONTEXT" wait --for=condition=ZitadelOrgReady project/single --timeout=60s
+
+        # Start kubectl proxy for native identity.miloapis.com CRD API testing
+        kubectl --context "$KUBE_CONTEXT" proxy --port=8001 > /dev/null 2>&1 &
+        KUBECTL_PROXY_PID=$!
 
         # Port-forward ZITADEL for token generation and direct API testing
         kubectl --context "$KUBE_CONTEXT" \
@@ -258,7 +269,7 @@ tasks:
         PF_APISERVER_PID=$!
 
         # Reliable cleanup
-        CLEANUP="kill $PF_ZITADEL_PID $PF_APISERVER_PID 2>/dev/null || true"
+        CLEANUP="kill $PF_ZITADEL_PID $PF_APISERVER_PID $KUBECTL_PROXY_PID 2>/dev/null || true; kubectl --context \"$KUBE_CONTEXT\" delete -f config/samples/resourcemanager/v1alpha/project.yaml --ignore-not-found 2>/dev/null || true"
         trap "$CLEANUP" EXIT
         
         sleep 5

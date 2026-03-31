@@ -1,20 +1,17 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: machineaccountkey-lifecycle
+  name: machineaccount-deactivation
 spec:
-  # This test exercises the MachineAccountKey controller end-to-end.
-  # 1. Create a MachineAccount and wait for it to be reconciled in ZITADEL.
-  # 2. Manually generate an RSA key pair (priv1/pub1).
-  # 3. Create a MachineAccountKey with pub1 and wait for ZITADEL key ID assignment.
-  # 4. Use priv1 and the ZITADEL key ID to sign a JWT profile using zitadel-tools.
-  # 5. Exchange the JWT for an access token via ZITADEL's OAuth2 endpoint.
-  # 6. Rotate the key: Generate a new pair (priv2/pub2) and patch the resource.
-  # 7. Verify the controller rotates the key in ZITADEL (new Key ID).
-  # 8. Verify the new priv2 can also obtain an access token.
-  # 9. Delete the MachineAccountKey and verify it is removed from ZITADEL.
+  # This test verifies that deactivating a MachineAccount prevents its keys from working.
+  # 1. Create a MachineAccount (Active) and a MachineAccountKey.
+  # 2. Verify an access token can be obtained.
+  # 3. Deactivate the MachineAccount (state: Inactive).
+  # 4. Verify getting an access token fails.
+  # 5. Re-activate the MachineAccount (state: Active).
+  # 6. Verify getting an access token works again.
   steps:
-  - name: create-machine-account
+  - name: create-resources
     try:
     - apply:
         file: resources/machineaccount.yaml
@@ -23,237 +20,169 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: e2e-machine-account
+            name: deactivation-ma
+          status:
+            state: Active
+            conditions:
+            - type: Ready
+              status: "True"
+    - script:
+        content: |
+          set -e
+
+          # Generate RSA key pair
+          openssl genrsa -out /tmp/deact-priv.pem 2048 2>/dev/null
+          openssl rsa -in /tmp/deact-priv.pem -pubout -out /tmp/deact-pub.pem 2>/dev/null
+
+          # The Zitadel username is the computed email: {uid}@{namespace}.{clusterName}.iam.miloapis.com
+          MA_UID=$(kubectl get machineaccount deactivation-ma -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+          MA_USERNAME="${MA_UID}@${NAMESPACE}.single.iam.miloapis.com"
+
+          # Create the key via identity.miloapis.com, providing our own public key
+          PUB_KEY=$(cat /tmp/deact-pub.pem)
+          POST_RESPONSE=$(jq -n \
+            --arg machineAccountName "$MA_USERNAME" \
+            --arg publicKey "$PUB_KEY" \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"deact-key"},spec:{machineAccountName:$machineAccountName,publicKey:$publicKey}}' | \
+            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
+              -H "Content-Type: application/json" \
+              -H "Impersonate-User: system:admin" \
+              -H "Impersonate-Group: system:masters" \
+              -H "Impersonate-Extra-project: single" \
+              -d @-)
+
+          # Extract authProviderKeyID from the response status
+          printf '%s\n' "$POST_RESPONSE"
+          KEY_ID=$(printf '%s\n' "$POST_RESPONSE" | jq -r '.status.authProviderKeyID')
+          if [ -z "$KEY_ID" ] || [ "$KEY_ID" == "null" ]; then
+            echo "ERROR: Failed to extract authProviderKeyID. Response: $POST_RESPONSE"
+            exit 1
+          fi
+          echo "KEY_ID: $KEY_ID"
+
+          # Build zitadel-tools key JSON using our own private key
+          PRIV_KEY=$(cat /tmp/deact-priv.pem)
+          jq -n \
+            --arg keyId "$KEY_ID" \
+            --arg userId "$MA_UID" \
+            --arg key "$PRIV_KEY" \
+            '{type:"serviceaccount",keyId:$keyId,key:$key,userId:$userId}' > /tmp/zitadel-key-deact.json
+          echo "Saved zitadel key JSON"
+
+  - name: verify-key-works
+    try:
+    - script:
+        content: |
+          set -e
+          # Use zitadel-tools to generate JWT profile from the saved key JSON
+          ../../bin/zitadel-tools key2jwt \
+            --audience="https://zitadel.zitadel-system.svc.cluster.local" \
+            --key="/tmp/zitadel-key-deact.json" > /tmp/jwt-deact.token
+
+          # Get access token from ZITADEL
+          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
+            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
+            --data-urlencode "assertion=$(cat /tmp/jwt-deact.token)")
+
+          ACCESS_TOKEN=$(printf '%s\n' "$RESPONSE" | jq -r '.access_token')
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" == "null" ]; then
+            echo "ERROR: Failed to obtain access token before deactivation. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Successfully obtained access token before deactivation!"
+
+  - name: deactivate-machine-account
+    try:
+    - patch:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          spec:
+            state: Inactive
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          status:
+            state: Inactive
+            conditions:
+            - type: Ready
+              status: "True"
+
+  - name: verify-token-fails-when-deactivated
+    timeouts:
+      exec: 20s
+    try:
+    - script:
+        content: |
+          set -e
+          # Wait a bit for ZITADEL to process the deactivation
+          sleep 5
+
+          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
+            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
+            --data-urlencode "assertion=$(cat /tmp/jwt-deact.token)")
+
+          ERROR=$(printf '%s\n' "$RESPONSE" | jq -r '.error')
+          if [ "$ERROR" == "null" ] || [ -z "$ERROR" ]; then
+            echo "ERROR: Access token exchange did not fail as expected when deactivated! Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Success: Token correctly failed when machine account was deactivated (Error: $ERROR)"
+
+  - name: reactivate-machine-account
+    try:
+    - patch:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
+          spec:
+            state: Active
+    - assert:
+        resource:
+          apiVersion: iam.miloapis.com/v1alpha1
+          kind: MachineAccount
+          metadata:
+            name: deactivation-ma
           status:
             state: Active
             conditions:
             - type: Ready
               status: "True"
 
-  - name: generate-key-and-create-mak
-    try:
-    - script:
-        content: |
-          set -e
-          openssl genrsa -out /tmp/e2e-priv1.pem 2048
-          openssl rsa -in /tmp/e2e-priv1.pem -pubout -out /tmp/e2e-pub1.pem
-          PUB_KEY=$(cat /tmp/e2e-pub1.pem)
-          
-          # Create MachineAccountKey resource with the public key
-          cat <<EOF | kubectl apply -n "$NAMESPACE" -f -
-          apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccountKey
-          metadata:
-            name: e2e-machine-key
-          spec:
-            machineAccountName: e2e-machine-account
-            publicKey: |
-          $(echo "$PUB_KEY" | sed 's/^/    /')
-          EOF
-
-  - name: wait-for-key-ready
-    try:
-    - assert:
-        resource:
-          apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccountKey
-          metadata:
-            name: e2e-machine-key
-          status:
-            conditions:
-            - type: Ready
-              status: "True"
-
-  - name: verify-access-token
-    try:
-    - script:
-        content: |
-          set -e
-          USER_UID=$(kubectl get machineaccount e2e-machine-account -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-          KEY_ID=$(kubectl get machineaccountkey e2e-machine-key -n "$NAMESPACE" -o jsonpath='{.status.authProviderKeyId}')
-          PRIV_KEY=$(cat /tmp/e2e-priv1.pem)
-          
-          # Construct ZITADEL Key JSON
-          cat <<EOF > /tmp/zitadel-key1.json
-          {
-            "type": "serviceaccount",
-            "keyId": "$KEY_ID",
-            "key": "$(echo "$PRIV_KEY" | awk '{printf "%s\\n", $0}' | sed 's/\"/\\"/g')",
-            "userId": "$USER_UID"
-          }
-          EOF
-          
-          # Use zitadel-tools to generate JWT profile
-          # Note: we need the absolute path to zitadel-tools if it's in bin/
-          ../../bin/zitadel-tools key2jwt \
-            --audience="https://zitadel.zitadel-system.svc.cluster.local" \
-            --key="/tmp/zitadel-key1.json" > /tmp/jwt1.token
-          
-          # Get access token from ZITADEL
-          # Wait for ZITADEL to be READY
-          # We use -k since it might be using self-signed certs in dev cluster
-          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
-            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
-            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
-            --data-urlencode "assertion=$(cat /tmp/jwt1.token)")
-            
-          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
-          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" == "null" ]; then
-            echo "ERROR: Failed to obtain access token. Response: $RESPONSE"
-            exit 1
-          fi
-          echo "Successfully obtained access token with key 1!"
-
-  - name: rotate-key
-    try:
-    - script:
-        content: |
-          set -e
-          # Capture OLD_KEY_ID before we rotate
-          OLD_KEY_ID=$(kubectl get machineaccountkey e2e-machine-key -n "$NAMESPACE" -o jsonpath='{.status.authProviderKeyId}')
-          echo "$OLD_KEY_ID" > /tmp/e2e-old-key-id.txt
-          
-          openssl genrsa -out /tmp/e2e-priv2.pem 2048
-          openssl rsa -in /tmp/e2e-priv2.pem -pubout -out /tmp/e2e-pub2.pem
-          PUB_KEY=$(cat /tmp/e2e-pub2.pem)
-          
-          # Update MachineAccountKey with NEW public key
-          cat <<EOF | kubectl apply -n "$NAMESPACE" -f -
-          apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccountKey
-          metadata:
-            name: e2e-machine-key
-          spec:
-            machineAccountName: e2e-machine-account
-            publicKey: |
-          $(echo "$PUB_KEY" | sed 's/^/    /')
-          EOF
-
-  - name: verify-rotation
+  - name: verify-token-works-after-reactivation
     timeouts:
-      exec: 30s
+      exec: 20s
     try:
     - script:
         content: |
           set -e
-          # Load the OLD_KEY_ID we captured before rotation
-          OLD_KEY_ID=$(cat /tmp/e2e-old-key-id.txt)
-          
-          # Wait for controller to process rotation
-          for i in {1..10}; do
-            NEW_KEY_ID=$(kubectl get machineaccountkey e2e-machine-key -n "$NAMESPACE" -o jsonpath='{.status.authProviderKeyId}')
-            if [ "$NEW_KEY_ID" != "$OLD_KEY_ID" ]; then
-              break
-            fi
-            echo "Waiting for rotation... attempt $i"
-            sleep 2
-          done
-          
-          if [ "$NEW_KEY_ID" == "$OLD_KEY_ID" ]; then
-            echo "ERROR: Key ID did not change after 20s"
-            exit 1
-          fi
-          
-          USER_UID=$(kubectl get machineaccount e2e-machine-account -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-          PRIV_KEY=$(cat /tmp/e2e-priv2.pem)
-          
-          # Construct ZITADEL Key JSON #2
-          cat <<EOF > /tmp/zitadel-key2.json
-          {
-            "type": "serviceaccount",
-            "keyId": "$NEW_KEY_ID",
-            "key": "$(echo "$PRIV_KEY" | awk '{printf "%s\\n", $0}' | sed 's/\"/\\"/g')",
-            "userId": "$USER_UID"
-          }
-          EOF
-          
-          ../../bin/zitadel-tools key2jwt \
-            --audience="https://zitadel.zitadel-system.svc.cluster.local" \
-            --key="/tmp/zitadel-key2.json" > /tmp/jwt2.token
-          
-          # Get access token from ZITADEL with NEW key
-          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
-            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
-            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
-            --data-urlencode "assertion=$(cat /tmp/jwt2.token)")
-            
-          ACCESS_TOKEN2=$(echo "$RESPONSE" | jq -r '.access_token')
-          if [ -z "$ACCESS_TOKEN2" ] || [ "$ACCESS_TOKEN2" == "null" ]; then
-            echo "ERROR: Failed to obtain access token with new key. Response: $RESPONSE"
-            exit 1
-          fi
-          echo "Successfully obtained access token with key 2!"
-
-  - name: verify-old-key-revoked
-    try:
-    - script:
-        content: |
-          set -e
-          USER_UID=$(kubectl get machineaccount e2e-machine-account -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-          OLD_KEY_ID=$(cat /tmp/e2e-old-key-id.txt)
-          PRIV_KEY1=$(cat /tmp/e2e-priv1.pem)
-          
-          # Construct ZITADEL Key JSON for the OLD key
-          cat <<EOF > /tmp/zitadel-key-old.json
-          {
-            "type": "serviceaccount",
-            "keyId": "$OLD_KEY_ID",
-            "key": "$(echo "$PRIV_KEY1" | awk '{printf "%s\\n", $0}' | sed 's/\"/\\"/g')",
-            "userId": "$USER_UID"
-          }
-          EOF
-          
-          # Sign JWT with OLD key (should still work as it's local signing)
-          ../../bin/zitadel-tools key2jwt \
-            --audience="https://zitadel.zitadel-system.svc.cluster.local" \
-            --key="/tmp/zitadel-key-old.json" > /tmp/jwt-old.token
-          
-          # Try to get access token from ZITADEL (should FAIL with 400 or 401)
-          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -H "Host: zitadel.zitadel-system.svc.cluster.local" \
-            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
-            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
-            --data-urlencode "assertion=$(cat /tmp/jwt-old.token)")
-            
-          ERROR=$(echo "$RESPONSE" | jq -r '.error')
-          if [ "$ERROR" != "invalid_grant" ] && [ "$ERROR" != "unauthorized_client" ] && [ "$ERROR" == "null" ]; then
-            echo "ERROR: Access token exchange did not fail as expected for revoked key! Response: $RESPONSE"
-            exit 1
-          fi
-          echo "Success: Old key correctly failed to authenticate (Error: $ERROR)"
-
-  - name: delete-key-and-verify-zitadel
-    timeouts:
-      exec: 30s
-    try:
-    - script:
-        content: |
-          set -e
-          USER_UID=$(kubectl get machineaccount e2e-machine-account -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
-          NEW_KEY_ID=$(kubectl get machineaccountkey e2e-machine-key -n "$NAMESPACE" -o jsonpath='{.status.authProviderKeyId}')
-          
-          # Delete the key
-          kubectl delete machineaccountkey e2e-machine-key -n "$NAMESPACE"
-          
-          # Verify in ZITADEL: it should return 404 or just not be in the list of keys
-          # ZITADEL V2 API for user keys: GET /v2/users/{user_id}/keys
-          # Wait for reconciliation
+          # Wait a bit for ZITADEL to process the reactivation
           sleep 5
-          
-          RESPONSE=$(curl -k -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' \
-            "$ZITADEL_DOMAIN/v2/users/${USER_UID}/keys" \
+
+          RESPONSE=$(curl -k -s -X POST "$ZITADEL_DOMAIN/oauth/v2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
             -H "Host: zitadel.zitadel-system.svc.cluster.local" \
-            -H 'Accept: application/json' \
-            -H "Authorization: Bearer $ZITADEL_TOKEN")
-            
-          # The key ID should not be in the response
-          if echo "$RESPONSE" | grep -q "\"${NEW_KEY_ID}\""; then
-            echo "ERROR: Key ${NEW_KEY_ID} still exists in ZITADEL after deletion. Response: $RESPONSE"
+            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --data-urlencode "scope=urn:zitadel:iam:org:project:id:zitadel:aud" \
+            --data-urlencode "assertion=$(cat /tmp/jwt-deact.token)")
+
+          ACCESS_TOKEN=$(printf '%s\n' "$RESPONSE" | jq -r '.access_token')
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" == "null" ]; then
+            echo "ERROR: Failed to obtain access token after reactivation. Response: $RESPONSE"
             exit 1
           fi
-          echo "Key successfully deleted in ZITADEL!"
+          echo "Successfully obtained access token again after reactivation!"
+
