@@ -66,7 +66,8 @@ type API interface {
 	DeactivateUser(ctx context.Context, orgID, userID string) error
 	ReactivateUser(ctx context.Context, orgID, userID string) error
 
-	// machine key in organization
+	// machine accounts and keys in organization
+	ListMachineAccountsInOrganization(ctx context.Context, orgID string) ([]*User, error)
 	AddMachineKeyInOrganization(ctx context.Context, orgID, userID string, publicKey []byte, expirationDate *time.Time) (keyID string, keyContent []byte, err error)
 	ListMachineKeysInOrganization(ctx context.Context, orgID, userID string) ([]*MachineKey, error)
 	RemoveMachineKeyInOrganization(ctx context.Context, orgID, userID, keyID string) error

@@ -167,6 +167,43 @@ func (r *REST) Create(
 	return mak, nil
 }
 
+// listAndAddMachineKeysToList retrieves all machine keys for a user and appends them to the list.
+// Returns an error if the listing fails.
+func (r *REST) listAndAddMachineKeysToList(ctx context.Context, list *milov1alpha1.MachineAccountKeyList, orgID, userID, machineAccountName string) error {
+	machineKeys, err := r.Z.ListMachineKeysInOrganization(ctx, orgID, userID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to list machine account keys", "orgID", orgID, "userID", userID)
+		return apierrors.NewInternalError(fmt.Errorf("failed to list machine account keys"))
+	}
+
+	addMachineKeysToList(list, machineAccountName, machineKeys)
+	return nil
+}
+
+// addMachineKeysToList converts MachineKey objects to MachineAccountKey objects and appends them to the list.
+func addMachineKeysToList(list *milov1alpha1.MachineAccountKeyList, machineAccountName string, machineKeys []*zitadel.MachineKey) {
+	for _, mk := range machineKeys {
+		item := milov1alpha1.MachineAccountKey{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              mk.ID,
+				CreationTimestamp: metav1.NewTime(mk.CreatedDate),
+			},
+			Spec: milov1alpha1.MachineAccountKeySpec{
+				MachineAccountUserName: machineAccountName,
+				ExpirationDate:         nil,
+			},
+			Status: milov1alpha1.MachineAccountKeyStatus{
+				AuthProviderKeyID: mk.ID,
+			},
+		}
+		// Add expiration date to spec if it exists
+		if mk.ExpirationDate != nil {
+			item.Spec.ExpirationDate = &metav1.Time{Time: *mk.ExpirationDate}
+		}
+		list.Items = append(list.Items, item)
+	}
+}
+
 // validatePublicKey validates that the public key is in valid PEM format
 // and contains a valid RSA or ECDSA public key.
 func validatePublicKey(publicKeyPEM []byte) error {
@@ -272,43 +309,32 @@ func (r *REST) List(
 		}
 
 		// List keys for this user from Zitadel
-		machineKeys, err := r.Z.ListMachineKeysInOrganization(ctx, orgID, user.ID)
-		if err != nil {
-			klog.ErrorS(err, "Failed to list machine account keys", "orgID", orgID, "userID", user.ID)
-			return nil, apierrors.NewInternalError(fmt.Errorf("failed to list machine account keys"))
+		if err := r.listAndAddMachineKeysToList(ctx, list, orgID, user.ID, machineAccountName); err != nil {
+			return nil, err
 		}
 
-		// Convert MachineKey objects to MachineAccountKey objects
-		for _, mk := range machineKeys {
-			item := milov1alpha1.MachineAccountKey{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: machineAccountName + ":" + mk.ID,
-					// Set creation timestamp from the key's creation date
-					CreationTimestamp: metav1.NewTime(mk.CreatedDate),
-				},
-				Spec: milov1alpha1.MachineAccountKeySpec{
-					MachineAccountUserName: machineAccountName,
-					// Include optional fields if they exist
-					ExpirationDate: nil,
-				},
-				Status: milov1alpha1.MachineAccountKeyStatus{
-					AuthProviderKeyID: mk.ID,
-				},
-			}
-			// Add expiration date to spec if it exists
-			if mk.ExpirationDate != nil {
-				item.Spec.ExpirationDate = &metav1.Time{Time: *mk.ExpirationDate}
-			}
-			list.Items = append(list.Items, item)
-		}
-
-		klog.V(2).Infof("Listed %d machine account keys for org=%q, machineAccount=%q", len(machineKeys), orgID, machineAccountName)
+		klog.V(2).Infof("Listed %d machine account keys for org=%q, machineAccount=%q", len(list.Items), orgID, machineAccountName)
 		return list, nil
 	}
 
-	// If no machineAccountName filter, return empty list
-	// (listing all keys across all users would be expensive and requires listing all users first)
-	klog.V(2).Infof("Listing machine account keys for org=%q (no machineAccountName filter, returning empty list)", orgID)
+	// If no machineAccountName filter, list all keys for all machine accounts in the organization
+	klog.V(2).Infof("Listing all machine account keys for org=%q (no filter provided)", orgID)
+
+	// Get all machine accounts in the organization
+	machineAccounts, err := r.Z.ListMachineAccountsInOrganization(ctx, orgID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to list machine accounts", "orgID", orgID)
+		return nil, apierrors.NewInternalError(fmt.Errorf("failed to list machine accounts"))
+	}
+
+	// For each machine account, list all its keys
+	for _, account := range machineAccounts {
+		if err := r.listAndAddMachineKeysToList(ctx, list, orgID, account.ID, account.Username); err != nil {
+			return nil, err
+		}
+	}
+
+	klog.V(2).Infof("Listed %d machine account(s) with total %d key(s) for org=%q", len(machineAccounts), len(list.Items), orgID)
 	return list, nil
 }
 
@@ -362,7 +388,7 @@ func (r *REST) Get(
 		if mk.ID == keyID {
 			item := &milov1alpha1.MachineAccountKey{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:              name,
+					Name:              keyID,
 					CreationTimestamp: metav1.NewTime(mk.CreatedDate),
 				},
 				Spec: milov1alpha1.MachineAccountKeySpec{

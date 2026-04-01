@@ -597,6 +597,43 @@ func (c *SDKClient) ReactivateUser(ctx context.Context, orgID, userID string) er
 	return nil
 }
 
+// ListMachineAccountsInOrganization lists all machine accounts (users) within an organization.
+// Returns only users that are machine type.
+func (c *SDKClient) ListMachineAccountsInOrganization(ctx context.Context, orgID string) ([]*User, error) {
+	klog.V(2).Infof("ListMachineAccountsInOrganization: listing machine accounts in org=%q", orgID)
+
+	// Set organization context in gRPC metadata
+	ctxWithOrg := middleware.SetOrgID(ctx, orgID)
+
+	resp, err := c.user.ListUsers(ctxWithOrg, &userv2.ListUsersRequest{
+		Queries: []*userv2.SearchQuery{
+			{Query: &userv2.SearchQuery_OrganizationIdQuery{
+				OrganizationIdQuery: &userv2.OrganizationIdQuery{OrganizationId: orgID},
+			}},
+		},
+	})
+	if err != nil {
+		klog.Errorf("ListMachineAccountsInOrganization: failed to list users: %v", err)
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+
+	machineAccounts := make([]*User, 0)
+	for _, user := range resp.GetResult() {
+		// Filter for machine users only
+		if user.GetMachine() != nil {
+			result := &User{
+				ID:       user.GetUserId(),
+				Username: localIdentityUsername(user),
+				State:    user.GetState().String(),
+			}
+			machineAccounts = append(machineAccounts, result)
+		}
+	}
+
+	klog.V(2).Infof("ListMachineAccountsInOrganization: found %d machine account(s) in org=%q", len(machineAccounts), orgID)
+	return machineAccounts, nil
+}
+
 // ListMachineKeysInOrganization lists all machine keys for a user within an organization.
 // Returns complete key information including ID, type, creation date, and expiration date.
 func (c *SDKClient) ListMachineKeysInOrganization(ctx context.Context, orgID, userID string) ([]*MachineKey, error) {
