@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/finalizer"
@@ -32,8 +31,7 @@ import (
 )
 
 const (
-	projectFinalizerKey   = "auth-provider-zitadel.miloapis.com/project"
-	projectConditionReady = "ZitadelOrgReady"
+	projectFinalizerKey = "auth-provider-zitadel.miloapis.com/project"
 )
 
 // ProjectController reconciles Project resources in the main cluster.
@@ -76,8 +74,6 @@ func (f *projectFinalizer) Finalize(ctx context.Context, obj client.Object) (fin
 	return finalizer.Result{}, nil
 }
 
-
-
 // +kubebuilder:rbac:groups=resourcemanager.miloapis.com,resources=projects,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=resourcemanager.miloapis.com,resources=projects/status,verbs=get;update
 // +kubebuilder:rbac:groups=resourcemanager.miloapis.com,resources=projects/finalizers,verbs=update
@@ -114,17 +110,6 @@ func (r *ProjectController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	// Cleanup: Remove status condition if present.
-	if condition := meta.FindStatusCondition(project.Status.Conditions, projectConditionReady); condition != nil {
-		log.Info("Removing project condition", "projectName", project.GetName())
-		meta.RemoveStatusCondition(&project.Status.Conditions, projectConditionReady)
-
-		if err := r.Client.Status().Update(ctx, project); err != nil {
-			log.Error(err, "Failed to update project status during cleanup")
-			return ctrl.Result{}, fmt.Errorf("update project status: %w", err)
-		}
-	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -146,4 +131,3 @@ func (r *ProjectController) SetupWithManager(mgr ctrl.Manager) error {
 		For(&resourcemanagermiloapiscomv1alpha1.Project{}).
 		Complete(r)
 }
-

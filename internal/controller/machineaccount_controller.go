@@ -161,7 +161,6 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 		log.Info("Successfully created Zitadel Organization", "orgID", orgID)
 	}
 
-
 	maComputedEmail := r.computeEmailAddress(machineAccount, req)
 	userID := string(machineAccount.GetUID())
 	log.Info("Checking if machine account exists in Zitadel", "userID", userID, "orgID", orgID)
