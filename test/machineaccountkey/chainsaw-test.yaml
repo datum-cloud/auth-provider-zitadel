@@ -116,15 +116,14 @@ spec:
     - script:
         content: |
           set -e
-          MA_USERNAME=$(cat /tmp/ma_username.txt)
           KEY1_ID=$(cat /tmp/key1_id.txt)
 
-          # Delete Key 1. Target resource name is {machineAccountName}:{keyID}
-          DELETE_RESPONSE=$(curl -s -X DELETE "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys/${MA_USERNAME}:${KEY1_ID}" \
+          # Delete Key 1. Target resource name is the keyID
+          DELETE_RESPONSE=$(curl -s -X DELETE "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys/${KEY1_ID}" \
             -H "Impersonate-User: system:admin" \
             -H "Impersonate-Group: system:masters" \
             -H "Impersonate-Extra-project: single")
-          
+
           echo "Successfully requested deletion of Key 1 (${KEY1_ID}). REST Response:"
           printf '%s\n' "$DELETE_RESPONSE"
 

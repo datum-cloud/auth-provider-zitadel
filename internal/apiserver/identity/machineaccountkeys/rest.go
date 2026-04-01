@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -339,76 +338,38 @@ func (r *REST) List(
 }
 
 // Get handles GET requests to retrieve a specific machine account key.
-// The name format is "{machineAccountName}:{keyID}".
-// Example: "my-service-account:326102453042806786"
+// The name is the keyID.
+// Example: "326102453042806786"
 func (r *REST) Get(
 	ctx context.Context,
 	name string,
 	options *metav1.GetOptions,
 ) (runtime.Object, error) {
-	orgID, ok := r.getProjectID(ctx)
-	if !ok || orgID == "" {
-		klog.ErrorS(nil, "Missing organization ID in request context")
-		return nil, apierrors.NewBadRequest("request must be made within a project context (/projects/{projectID}/control-plane/...) or use --as-extra=project={orgID} for testing")
-	}
+	keyID := name
+	klog.InfoS("Getting machine account key from Zitadel", "keyID", keyID)
 
-	// Parse name format: "{machineAccountName}:{keyID}"
-	parts := strings.Split(name, ":")
-	if len(parts) != 2 {
-		klog.ErrorS(nil, "Invalid resource name format", "name", name)
-		return nil, apierrors.NewBadRequest("resource name must be in format: {machineAccountName}:{keyID}")
-	}
-
-	machineAccountName := parts[0]
-	keyID := parts[1]
-
-	klog.InfoS("Getting machine account key from Zitadel", "keyID", keyID, "machineAccount", machineAccountName, "orgID", orgID)
-
-	// Look up the machine account user by name
-	user, err := r.Z.GetMachineUserByUsername(ctx, orgID, machineAccountName)
+	// List all machine account keys using the List method
+	listResult, err := r.List(ctx, nil)
 	if err != nil {
-		klog.ErrorS(err, "Failed to look up machine account user", "orgID", orgID, "machineAccountName", machineAccountName)
-		return nil, apierrors.NewInternalError(fmt.Errorf("failed to look up machine account"))
+		return nil, err
 	}
 
-	if user == nil {
-		klog.InfoS("Machine account user not found", "orgID", orgID, "machineAccountName", machineAccountName)
-		return nil, apierrors.NewNotFound(machineAccountKeysGR, name)
-	}
-
-	// List keys for this user to find the specific one
-	machineKeys, err := r.Z.ListMachineKeysInOrganization(ctx, orgID, user.ID)
-	if err != nil {
-		klog.ErrorS(err, "Failed to list machine account keys", "orgID", orgID, "userID", user.ID)
-		return nil, apierrors.NewInternalError(fmt.Errorf("failed to list machine account keys"))
+	list, ok := listResult.(*milov1alpha1.MachineAccountKeyList)
+	if !ok {
+		klog.ErrorS(nil, "Unexpected return type from List", "type", listResult)
+		return nil, apierrors.NewInternalError(fmt.Errorf("unexpected return type from list"))
 	}
 
 	// Find the key with the matching ID
-	for _, mk := range machineKeys {
-		if mk.ID == keyID {
-			item := &milov1alpha1.MachineAccountKey{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:              keyID,
-					CreationTimestamp: metav1.NewTime(mk.CreatedDate),
-				},
-				Spec: milov1alpha1.MachineAccountKeySpec{
-					MachineAccountUserName: machineAccountName,
-				},
-				Status: milov1alpha1.MachineAccountKeyStatus{
-					AuthProviderKeyID: mk.ID,
-				},
-			}
-			// Add expiration date if it exists
-			if mk.ExpirationDate != nil {
-				item.Spec.ExpirationDate = &metav1.Time{Time: *mk.ExpirationDate}
-			}
-			klog.V(2).Infof("Retrieved machine account key: keyID=%s, machineAccount=%s, org=%s", keyID, machineAccountName, orgID)
-			return item, nil
+	for _, item := range list.Items {
+		if item.Status.AuthProviderKeyID == keyID {
+			klog.V(2).Infof("Retrieved machine account key: keyID=%s, machineAccount=%s", keyID, item.Spec.MachineAccountUserName)
+			return &item, nil
 		}
 	}
 
 	// Key not found
-	klog.InfoS("Machine account key not found", "orgID", orgID, "machineAccountName", machineAccountName, "keyID", keyID)
+	klog.InfoS("Machine account key not found", "keyID", keyID)
 	return nil, apierrors.NewNotFound(machineAccountKeysGR, name)
 }
 
@@ -466,8 +427,8 @@ func (r *REST) ConvertToTable(ctx context.Context, obj runtime.Object, tableOpti
 }
 
 // Delete handles DELETE requests to remove a machine account key from Zitadel.
-// The resource name should be in format: "{machineAccountName}:{keyID}"
-// Example: "my-service-account:326102453042806786"
+// The name is the keyID.
+// Example: "326102453042806786"
 //
 // The organization ID is extracted from the request context.
 func (r *REST) Delete(
@@ -482,20 +443,22 @@ func (r *REST) Delete(
 		return nil, false, apierrors.NewBadRequest("request must be made within a project context (/projects/{projectID}/control-plane/...) or use --as-extra=project={orgID} for testing")
 	}
 
-	// Parse name format: "{machineAccountName}:{keyID}"
-	// Using ":" as separator to avoid RBAC sub-resource issues (which "/" causes)
-	parts := strings.Split(name, ":")
-	if len(parts) != 2 {
-		klog.ErrorS(nil, "Invalid resource name format", "name", name)
-		return nil, false, apierrors.NewBadRequest("resource name must be in format: {machineAccountName}:{keyID}")
+	keyID := name
+	klog.InfoS("Deleting machine account key from Zitadel", "keyID", keyID, "orgID", orgID)
+
+	// Get the key to retrieve machine account information
+	keyObj, err := r.Get(ctx, keyID, nil)
+	if err != nil {
+		return nil, false, err
 	}
 
-	machineAccountName := parts[0]
-	keyID := parts[1]
+	key, ok := keyObj.(*milov1alpha1.MachineAccountKey)
+	if !ok {
+		klog.ErrorS(nil, "Unexpected return type from Get", "type", keyObj)
+		return nil, false, apierrors.NewInternalError(fmt.Errorf("unexpected return type from get"))
+	}
 
-	klog.InfoS("Deleting machine account key from Zitadel", "keyID", keyID, "machineAccount", machineAccountName, "orgID", orgID)
-
-	klog.InfoS("Deleting machine account key from Zitadel", "keyID", keyID, "machineAccount", machineAccountName, "orgID", orgID)
+	machineAccountName := key.Spec.MachineAccountUserName
 
 	// Look up the machine account user by name
 	user, err := r.Z.GetMachineUserByUsername(ctx, orgID, machineAccountName)
@@ -518,8 +481,8 @@ func (r *REST) Delete(
 
 	klog.V(2).Infof("Machine account key deleted successfully: keyID=%s, machineAccount=%s, org=%s", keyID, machineAccountName, orgID)
 
-	// Return the deleted object (empty in this case as it's proxy-managed)
-	return &milov1alpha1.MachineAccountKey{}, true, nil
+	// Return the deleted object
+	return key, true, nil
 }
 
 // Destroy satisfies rest.Storage.

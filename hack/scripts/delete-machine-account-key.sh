@@ -12,9 +12,6 @@ set -euo pipefail
 # The project ID (organization ID in Zitadel)
 PROJECT_ID="single"
 
-# The machine account username (must exist in the project's Zitadel organization)
-MACHINE_ACCOUNT_NAME="example-service-account@single.identity.miloapis.com"
-
 # The key ID to delete (from Zitadel)
 KEY_ID="366525074351587355"
 
@@ -25,14 +22,13 @@ API_SERVER_URL="http://localhost:8080"
 # SCRIPT - NO NEED TO MODIFY BELOW
 # ============================================================================
 
-if [ -z "$MACHINE_ACCOUNT_NAME" ] || [ -z "$KEY_ID" ]; then
-    echo "Error: MACHINE_ACCOUNT_NAME and KEY_ID must be set"
+if [ -z "$KEY_ID" ]; then
+    echo "Error: KEY_ID must be set"
     exit 1
 fi
 
 echo "Deleting machine account key..."
 echo "  Project ID: $PROJECT_ID"
-echo "  Machine Account: $MACHINE_ACCOUNT_NAME"
 echo "  Key ID: $KEY_ID"
 echo ""
 
@@ -47,7 +43,7 @@ echo "Sending delete request to $API_SERVER_URL..."
 
 # Build the resource name in format: {machineAccountName}:{keyID}
 # Using ":" as separator to avoid RBAC sub-resource issues with "/"
-RESOURCE_NAME="$MACHINE_ACCOUNT_NAME:$KEY_ID"
+RESOURCE_NAME="$KEY_ID"
 
 # Make the request - the resource name contains both machineAccountName and keyID
 RESPONSE=$(curl -s -X DELETE \
