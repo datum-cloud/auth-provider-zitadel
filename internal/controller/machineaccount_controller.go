@@ -145,6 +145,22 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	// The cluster name is /{project-name}, so strip the leading / to get the project name.
 	// The project name is used as the Zitadel org ID.
 	orgID := strings.TrimPrefix(req.ClusterName, "/")
+	log.V(2).Info("Checking if Zitadel organization exists", "orgID", orgID)
+	org, err := r.Zitadel.GetOrganization(ctx, orgID)
+	if err != nil {
+		log.Error(err, "Failed to check if Zitadel Organization exists", "orgID", orgID)
+		return ctrl.Result{}, fmt.Errorf("get organization: %w", err)
+	}
+
+	if org == nil {
+		log.Info("Zitadel Organization does not exist, creating it", "orgID", orgID)
+		if _, err := r.Zitadel.CreateOrganizationWithID(ctx, orgID, orgID); err != nil {
+			log.Error(err, "Failed to create Zitadel Organization", "orgID", orgID)
+			return ctrl.Result{}, fmt.Errorf("create organization: %w", err)
+		}
+		log.Info("Successfully created Zitadel Organization", "orgID", orgID)
+	}
+
 
 	maComputedEmail := r.computeEmailAddress(machineAccount, req)
 	userID := string(machineAccount.GetUID())

@@ -257,7 +257,6 @@ tasks:
 
         echo "Applying Project resource..."
         kubectl --context "$KUBE_CONTEXT" apply -f config/samples/resourcemanager/v1alpha/project.yaml
-        kubectl --context "$KUBE_CONTEXT" wait --for=condition=ZitadelOrgReady project/single --timeout=60s
 
         # Start kubectl proxy for native identity.miloapis.com CRD API testing
         kubectl --context "$KUBE_CONTEXT" proxy --port=8001 > /dev/null 2>&1 &

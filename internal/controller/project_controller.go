@@ -22,7 +22,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/finalizer"
@@ -53,7 +52,6 @@ type projectFinalizer struct {
 
 // Finalize handles cleanup when a Project is deleted.
 // It deletes the corresponding Zitadel Organization.
-// NotFound errors are treated as success (idempotent).
 func (f *projectFinalizer) Finalize(ctx context.Context, obj client.Object) (finalizer.Result, error) {
 	log := logf.FromContext(ctx).WithName("project-finalizer")
 	log.Info("Starting finalization for Project")
@@ -78,28 +76,26 @@ func (f *projectFinalizer) Finalize(ctx context.Context, obj client.Object) (fin
 	return finalizer.Result{}, nil
 }
 
+
+
 // +kubebuilder:rbac:groups=resourcemanager.miloapis.com,resources=projects,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=resourcemanager.miloapis.com,resources=projects/status,verbs=get;update
 // +kubebuilder:rbac:groups=resourcemanager.miloapis.com,resources=projects/finalizers,verbs=update
 
-// Reconcile moves the current state of a Project closer to the desired state.
-// It watches Project resources and ensures a corresponding Zitadel Organization exists.
+// Reconcile ENSURES the finalizer is present for deletion logic, but cleans up any status conditions previously set.
 func (r *ProjectController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithName("project-reconciler")
-	log.Info("Starting reconciliation", "request", req)
 
-	// Fetch Project resource from the main cluster.
 	project := &resourcemanagermiloapiscomv1alpha1.Project{}
 	if err := r.Client.Get(ctx, req.NamespacedName, project); err != nil {
 		if errors.IsNotFound(err) {
-			log.Info("Project not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
 		log.Error(err, "Failed to get Project")
 		return ctrl.Result{}, fmt.Errorf("get project: %w", err)
 	}
 
-	// Run finalizers (handles deletion path).
+	// Manage finalizers. This will add the finalizer if not present and execute it if deleting.
 	finalizeResult, err := r.Finalizers.Finalize(ctx, project)
 	if err != nil {
 		log.Error(err, "Failed to run finalizers")
@@ -113,52 +109,22 @@ func (r *ProjectController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// If object is marked for deletion, we're done.
+	// If object is marked for deletion, we are done (finalizer should have run).
 	if project.GetDeletionTimestamp() != nil {
 		return ctrl.Result{}, nil
 	}
 
-	projectName := project.GetName()
+	// Cleanup: Remove status condition if present.
+	if condition := meta.FindStatusCondition(project.Status.Conditions, projectConditionReady); condition != nil {
+		log.Info("Removing project condition", "projectName", project.GetName())
+		meta.RemoveStatusCondition(&project.Status.Conditions, projectConditionReady)
 
-	// Skip reconciliation if the Zitadel Organization is already ready.
-	// This avoids unnecessary GetOrganization API calls on every reconciliation.
-	if condition := meta.FindStatusCondition(project.Status.Conditions, projectConditionReady); condition != nil && condition.Status == metav1.ConditionTrue {
-		log.V(2).Info("Zitadel Organization is already ready. Skipping reconciliation", "projectName", projectName)
-		return ctrl.Result{}, nil
-	}
-
-	// Check if Zitadel Organization already exists.
-	// The organization ID matches the project name, which also matches the project control plane cluster name (/{project-name}).
-	org, err := r.Zitadel.GetOrganization(ctx, projectName)
-	if err != nil {
-		log.Error(err, "Failed to check if Zitadel Organization exists", "projectName", projectName)
-		return ctrl.Result{}, fmt.Errorf("get organization: %w", err)
-	}
-
-	// Create organization if it doesn't exist.
-	if org == nil {
-		log.Info("Zitadel Organization does not exist. Creating...", "projectName", projectName)
-		orgID, err := r.Zitadel.CreateOrganizationWithID(ctx, projectName, projectName)
-		if err != nil {
-			log.Error(err, "Failed to create Zitadel Organization", "projectName", projectName)
-			setProjectCondition(project, metav1.ConditionFalse, "OrgCreationFailed", err.Error())
-			if statusErr := r.Client.Status().Update(ctx, project); statusErr != nil {
-				log.Error(statusErr, "Failed to update Project status")
-			}
-			return ctrl.Result{}, fmt.Errorf("create organization: %w", err)
+		if err := r.Client.Status().Update(ctx, project); err != nil {
+			log.Error(err, "Failed to update project status during cleanup")
+			return ctrl.Result{}, fmt.Errorf("update project status: %w", err)
 		}
-		log.Info("Zitadel Organization created successfully", "orgID", orgID)
 	}
 
-	// Update Project status to indicate Zitadel Org is ready.
-	setProjectCondition(project, metav1.ConditionTrue, projectConditionReady, "Zitadel Organization is ready")
-
-	if err := r.Client.Status().Update(ctx, project); err != nil {
-		log.Error(err, "Failed to update Project status")
-		return ctrl.Result{}, fmt.Errorf("update project status: %w", err)
-	}
-
-	log.Info("Successfully reconciled Project", "projectName", projectName)
 	return ctrl.Result{}, nil
 }
 
@@ -181,14 +147,3 @@ func (r *ProjectController) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// setProjectCondition sets a condition on the Project's status.
-// It updates the ZitadelOrgReady condition with the given status, reason, and message.
-func setProjectCondition(project *resourcemanagermiloapiscomv1alpha1.Project, status metav1.ConditionStatus, reason, message string) {
-	meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
-		Type:               projectConditionReady,
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	})
-}
