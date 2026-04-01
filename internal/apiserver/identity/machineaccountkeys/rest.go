@@ -314,16 +314,75 @@ func (r *REST) List(
 
 // Get handles GET requests to retrieve a specific machine account key.
 // The name format is "{machineAccountName}:{keyID}".
-// This method is currently a no-op since keys are not persistently stored as objects.
-// Use List with fieldSelector to get keys for a specific machine account instead.
+// Example: "my-service-account:326102453042806786"
 func (r *REST) Get(
 	ctx context.Context,
 	name string,
 	options *metav1.GetOptions,
 ) (runtime.Object, error) {
-	// Keys are proxied through to Zitadel and not stored as persistent objects.
-	// To retrieve keys, use List with fieldSelector=spec.machineAccountName=<account>
-	klog.ErrorS(nil, "Get is not supported for machineaccountkeys; use List with fieldSelector instead", "name", name)
+	orgID, ok := r.getProjectID(ctx)
+	if !ok || orgID == "" {
+		klog.ErrorS(nil, "Missing organization ID in request context")
+		return nil, apierrors.NewBadRequest("request must be made within a project context (/projects/{projectID}/control-plane/...) or use --as-extra=project={orgID} for testing")
+	}
+
+	// Parse name format: "{machineAccountName}:{keyID}"
+	parts := strings.Split(name, ":")
+	if len(parts) != 2 {
+		klog.ErrorS(nil, "Invalid resource name format", "name", name)
+		return nil, apierrors.NewBadRequest("resource name must be in format: {machineAccountName}:{keyID}")
+	}
+
+	machineAccountName := parts[0]
+	keyID := parts[1]
+
+	klog.InfoS("Getting machine account key from Zitadel", "keyID", keyID, "machineAccount", machineAccountName, "orgID", orgID)
+
+	// Look up the machine account user by name
+	user, err := r.Z.GetMachineUserByUsername(ctx, orgID, machineAccountName)
+	if err != nil {
+		klog.ErrorS(err, "Failed to look up machine account user", "orgID", orgID, "machineAccountName", machineAccountName)
+		return nil, apierrors.NewInternalError(fmt.Errorf("failed to look up machine account"))
+	}
+
+	if user == nil {
+		klog.InfoS("Machine account user not found", "orgID", orgID, "machineAccountName", machineAccountName)
+		return nil, apierrors.NewNotFound(machineAccountKeysGR, name)
+	}
+
+	// List keys for this user to find the specific one
+	machineKeys, err := r.Z.ListMachineKeysInOrganization(ctx, orgID, user.ID)
+	if err != nil {
+		klog.ErrorS(err, "Failed to list machine account keys", "orgID", orgID, "userID", user.ID)
+		return nil, apierrors.NewInternalError(fmt.Errorf("failed to list machine account keys"))
+	}
+
+	// Find the key with the matching ID
+	for _, mk := range machineKeys {
+		if mk.ID == keyID {
+			item := &milov1alpha1.MachineAccountKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              name,
+					CreationTimestamp: metav1.NewTime(mk.CreatedDate),
+				},
+				Spec: milov1alpha1.MachineAccountKeySpec{
+					MachineAccountUserName: machineAccountName,
+				},
+				Status: milov1alpha1.MachineAccountKeyStatus{
+					AuthProviderKeyID: mk.ID,
+				},
+			}
+			// Add expiration date if it exists
+			if mk.ExpirationDate != nil {
+				item.Spec.ExpirationDate = &metav1.Time{Time: *mk.ExpirationDate}
+			}
+			klog.V(2).Infof("Retrieved machine account key: keyID=%s, machineAccount=%s, org=%s", keyID, machineAccountName, orgID)
+			return item, nil
+		}
+	}
+
+	// Key not found
+	klog.InfoS("Machine account key not found", "orgID", orgID, "machineAccountName", machineAccountName, "keyID", keyID)
 	return nil, apierrors.NewNotFound(machineAccountKeysGR, name)
 }
 
