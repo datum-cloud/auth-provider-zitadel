@@ -22,7 +22,6 @@ import (
 
 	"go.miloapis.com/auth-provider-zitadel/pkg/zitadel"
 	milov1alpha1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
-	projctx "go.miloapis.com/milo/pkg/request"
 	internalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 )
 
@@ -31,20 +30,25 @@ type REST struct {
 	EnableImpersonationFallback bool
 }
 
-// getProjectID attempts to find the Project/Org ID first from Milo's request context,
-// and falls back to checking Kubernetes Impersonation Extras for local testing via:
-// kubectl ... --as admin --as-extra=project=my-org-id
+// getProjectID attempts to find the Project/Org ID from:
+//  1. Milo's IAM parent extras (set by ProjectContextAuthorizationDecorator for requests
+//     routed through /projects/{id}/control-plane/...)
+//  2. Kubernetes Impersonation Extras for local testing via:
+//     kubectl ... --as admin --as-extra=project=my-org-id
 func (r *REST) getProjectID(ctx context.Context) (string, bool) {
-	if orgID, ok := projctx.ProjectID(ctx); ok && orgID != "" {
-		return orgID, true
-	}
+	if userInfo, ok := request.UserFrom(ctx); ok {
+		extras := userInfo.GetExtra()
+		// Primary path: project ID forwarded as IAM parent extras by Milo's
+		// ProjectContextAuthorizationDecorator when routing via /projects/{id}/control-plane/...
+		if kinds := extras["iam.miloapis.com/parent-type"]; len(kinds) > 0 && kinds[0] == "Project" {
+			if names := extras["iam.miloapis.com/parent-name"]; len(names) > 0 && names[0] != "" {
+				return names[0], true
+			}
+		}
 
-	// This check is only added as a safety measure, as this rest
-	// should only be reachable from the ProjectRouter, which sets the project ID in the context.
-	// This is used for local testing when running the apiserver outside of the ProjectRouter.
-	if r.EnableImpersonationFallback {
-		if userInfo, ok := request.UserFrom(ctx); ok {
-			if projects, ok := userInfo.GetExtra()["project"]; ok && len(projects) > 0 {
+		// Fallback for local testing when running the apiserver outside of the ProjectRouter.
+		if r.EnableImpersonationFallback {
+			if projects := extras["project"]; len(projects) > 0 && projects[0] != "" {
 				klog.V(4).InfoS("Found project ID from impersonation extras (local testing fallback)", "orgID", projects[0])
 				return projects[0], true
 			}
