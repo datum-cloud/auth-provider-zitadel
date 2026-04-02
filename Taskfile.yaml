@@ -1,15 +1,383 @@
 version: '3'
 
+includes:
+  # Remote Taskfile from datum-cloud/test-infra providing:
+  #   cluster-up, cluster-down, kubectl, install-flux, etc.
+  # Requires TASK_X_REMOTE_TASKFILES=1 environment variable.
+  # See: https://taskfile.dev/experiments/remote-taskfiles
+  test-infra:
+    taskfile: https://raw.githubusercontent.com/datum-cloud/test-infra/{{.TEST_INFRA_REPO_REF}}/Taskfile.yml
+    checksum: a1cf6063def6ee21ba42f8a0818127c92a9a5c313c293387f2294e42480dd3d5
+    vars:
+      REPO_REF: "{{.TEST_INFRA_REPO_REF}}"
+      WAIT_TIMEOUT: "{{.WAIT_TIMEOUT}}"
+
 vars:
+  WAIT_TIMEOUT: "20m"
+  TOOL_DIR: "{{.USER_WORKING_DIR}}/bin"
+  IMAGE_NAME: "ghcr.io/datum-cloud/auth-provider-zitadel"
+  IMAGE_TAG: "dev"
+  TEST_INFRA_CLUSTER_NAME: "test-infra"
+  TEST_INFRA_REPO_REF: "v0.6.0"
+  # renovate: datasource=go depName=github.com/kyverno/chainsaw
+  CHAINSAW_VERSION: v0.2.9
+  ZITADEL_NAMESPACE: "zitadel-system"
+  APP_NAMESPACE: "auth-provider-zitadel-system"
   CERTS_DIR: "certs"
   ZITADEL_PRIVATE_KEY: "certs/331462024888320002.json"
-  ZITADEL_DOMAIN: "http://localhost:8080"
-  
+  ZITADEL_DOMAIN: "https://localhost:8443"
+
 tasks:
   default:
     desc: Show available tasks
     cmds:
       - task --list
+    silent: true
+
+  # ============================================================
+  # CI lifecycle tasks
+  # ============================================================
+
+  ci:setup:
+    desc: Full CI environment setup (cluster + Zitadel + image + deploy)
+    silent: true
+    cmds:
+      - task: test-infra:cluster-up
+      - task: dev:build
+      - task: dev:load
+      - task: ci:install-dependencies
+      - task: ci:install-external-crds
+      - task: ci:deploy
+
+  ci:teardown:
+    desc: Destroy the CI Kind cluster
+    silent: true
+    cmds:
+      - task: test-infra:cluster-down
+
+  ci:configure-hosts:
+    desc: Ensure /etc/hosts entry for Zitadel exists
+    silent: true
+    cmds:
+      - |
+        echo "=== Ensuring /etc/hosts entry for Zitadel ==="
+        if ! grep -q "zitadel.zitadel-system.svc.cluster.local" /etc/hosts; then
+          echo "Adding 127.0.0.1 zitadel.zitadel-system.svc.cluster.local to /etc/hosts (requires sudo)..."
+          echo "127.0.0.1 zitadel.zitadel-system.svc.cluster.local" | sudo tee -a /etc/hosts
+        else
+          echo "/etc/hosts already configured."
+        fi
+      - |
+        echo ""
+        echo "################################################################################"
+        echo "#                                                                              #"
+        echo "#   ZITADEL SETUP COMPLETE!                                                    #"
+        echo "#                                                                              #"
+        echo "#   The Zitadel UI is now accessible at:                                       #"
+        echo "#   https://zitadel.zitadel-system.svc.cluster.local                           #"
+        echo "#                                                                              #"
+        echo "#   user: admin@localhost                                                      #"
+        echo "#   password: Password1!                                                       #"
+        echo "#                                                                              #"
+        echo "#   To start the port-forwarding, run:                                         #"
+        echo "#   task ci:port-forward                                                       #"
+        echo "#                                                                              #"
+        echo "################################################################################"
+        echo ""
+
+  ci:zitadel:reset:
+    desc: Wipe and re-bootstrap Zitadel without recreating the Kind cluster
+    silent: true
+    cmds:
+      - |
+        set -e
+        echo "=== Suspending Flux HelmRelease ==="
+        kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} \
+          annotate helmrelease zitadel -n {{.ZITADEL_NAMESPACE}} \
+          reconcile.fluxcd.io/suspended=true --overwrite 2>/dev/null || true
+
+        echo "=== Deleting zitadel-system namespace ==="
+        kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} \
+          delete namespace {{.ZITADEL_NAMESPACE}} --ignore-not-found --wait=true
+      - task: ci:install-dependencies
+
+  ci:install-dependencies:
+    desc: Install PostgreSQL, Zitadel (with TLS), and Kyverno secret-sync policy
+    silent: true
+    cmds:
+      - |
+        set -e
+        echo "Creating zitadel-system namespace..."
+        task test-infra:kubectl -- create namespace {{.ZITADEL_NAMESPACE}} \
+          --dry-run=client -o yaml \
+          | task test-infra:kubectl -- apply -f -
+
+        echo "Installing cert-manager issuers and Zitadel TLS certificate..."
+        task test-infra:kubectl -- apply -k config/dependencies/cert-manager
+
+        echo "Waiting for zitadel-tls secret to be issued..."
+        task test-infra:kubectl -- wait \
+          --for=condition=ready certificate/zitadel-tls \
+          -n zitadel-system \
+          --timeout=60s
+
+        echo "Applying PostgreSQL resources..."
+        task test-infra:kubectl -- apply -k config/dependencies/postgres
+
+        echo "Waiting for PostgreSQL to be ready..."
+        task test-infra:kubectl -- wait \
+          --for=condition=ready \
+          pod -l app=zitadel-postgresql \
+          -n zitadel-system \
+          --timeout=120s
+
+        echo "PostgreSQL ready. Applying Zitadel HelmRelease..."
+        task test-infra:kubectl -- apply -k config/dependencies/zitadel
+
+        echo "Waiting for Zitadel HelmRelease to be ready..."
+        task test-infra:kubectl -- wait \
+          --for=condition=ready \
+          helmrelease/zitadel -n zitadel-system \
+          --timeout=900s
+
+        echo "Waiting for Zitadel deployment to be available..."
+        task test-infra:kubectl -- wait \
+          --for=condition=available \
+          deployment/zitadel -n zitadel-system \
+          --timeout=300s
+
+        echo "Zitadel installed."
+
+        echo "Applying Kyverno secret-sync policy..."
+        task test-infra:kubectl -- apply -k config/dependencies/kyverno
+
+
+  ci:install-external-crds:
+    desc: Install IAM CRDs from Milo
+    silent: true
+    cmds:
+      - |
+        set -e
+        echo "Installing IAM and Infrastructure CRDs..."
+        task test-infra:kubectl -- apply \
+          -k https://github.com/datum-cloud/milo/config/crd/bases/iam
+        task test-infra:kubectl -- apply \
+          -k https://github.com/datum-cloud/milo/config/crd/bases/infrastructure?ref=v0.21.0
+        task test-infra:kubectl -- apply \
+          -k https://github.com/datum-cloud/milo/config/crd/bases/resourcemanager?ref=v0.21.0
+        echo "Milo CRDs installed."
+
+  ci:port-forward:
+    desc: Port-forward nginx proxy to localhost:443 (routes /ui/v2/login to login UI, all else to Zitadel)
+    cmds:
+      - sudo kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n zitadel-system svc/zitadel-proxy 443:443
+
+  authn:port-forward:
+    desc: Port-forward the authn-webhook service to localhost:8443
+    cmds:
+      - kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n {{.APP_NAMESPACE}} svc/authn-webhook 8090:8090
+
+  ci:deploy:
+    desc: Deploy all three services using the CI overlay
+    silent: true
+    cmds:
+      - |
+        set -e
+        echo "Deploying auth-provider-zitadel CI overlay..."
+        task test-infra:kubectl -- apply -k config/overlays/ci
+
+        echo "Waiting for controller-manager to be available..."
+        task test-infra:kubectl -- wait \
+          --for=condition=available \
+          deployment/controller-manager \
+          -n {{.APP_NAMESPACE}} \
+          --timeout=300s
+
+        echo "Waiting for authn-webhook to be available..."
+        task test-infra:kubectl -- wait \
+          --for=condition=available \
+          deployment/authn-webhook \
+          -n {{.APP_NAMESPACE}} \
+          --timeout=300s
+
+        echo "Waiting for apiserver to be available..."
+        task test-infra:kubectl -- wait \
+          --for=condition=available \
+          deployment/apiserver \
+          -n {{.APP_NAMESPACE}} \
+          --timeout=300s
+
+  ci:restart:
+    desc: Restart all three services by performing a rollout restart
+    silent: true
+    cmds:
+      - |
+        set -e
+        echo "Triggering Kyverno secret-sync policy for {{.APP_NAMESPACE}}..."
+        # Label the namespace with a timestamp to force an update event, prompting Kyverno to sync secrets
+        task test-infra:kubectl -- label namespace {{.APP_NAMESPACE}} kyverno-trigger=$(date +%s) --overwrite
+        sleep 5
+        
+        echo "Restarting deployments in {{.APP_NAMESPACE}}..."
+        task test-infra:kubectl -- rollout restart deployment/controller-manager -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout restart deployment/apiserver -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout restart deployment/authn-webhook -n {{.APP_NAMESPACE}}
+        
+        echo "Waiting for deployments to be ready again..."
+        task test-infra:kubectl -- rollout status deployment/controller-manager -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout status deployment/apiserver -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout status deployment/authn-webhook -n {{.APP_NAMESPACE}}
+        echo "All services restarted successfully."
+
+        echo "All services deployed."
+
+  # ============================================================
+  # Test tasks
+  # ============================================================
+
+  test:end-to-end:
+    desc: Run all end-to-end tests (Chainsaw and Identity API) against the CI cluster
+    deps:
+      - task: install-go-tool
+        vars:
+          NAME: chainsaw
+          PACKAGE: github.com/kyverno/chainsaw
+          VERSION: "{{.CHAINSAW_VERSION}}"
+      - task: zitadel-tools
+    cmds:
+      - |
+        set -e
+        KUBE_CONTEXT="kind-{{.TEST_INFRA_CLUSTER_NAME}}"
+        echo "Running end-to-end tests against $KUBE_CONTEXT..."
+
+        # Cleanup any orphaned port-forwards from previous runs on these specific ports
+        lsof -i :18443 -t | xargs kill -9 > /dev/null 2>&1 || true
+        lsof -i :19443 -t | xargs kill -9 > /dev/null 2>&1 || true
+        lsof -i :8001 -t | xargs kill -9 > /dev/null 2>&1 || true
+
+        echo "Applying Project resource..."
+        kubectl --context "$KUBE_CONTEXT" apply -f config/samples/resourcemanager/v1alpha/project.yaml
+
+        # Start kubectl proxy for native identity.miloapis.com CRD API testing
+        kubectl --context "$KUBE_CONTEXT" proxy --port=8001 > /dev/null 2>&1 &
+        KUBECTL_PROXY_PID=$!
+
+        # Port-forward ZITADEL for token generation and direct API testing
+        kubectl --context "$KUBE_CONTEXT" \
+          port-forward -n zitadel-system svc/zitadel 18443:443 > /dev/null 2>&1 &
+        PF_ZITADEL_PID=$!
+
+        # Port-forward APISERVER to 19443 for Identity API tests
+        kubectl --context "$KUBE_CONTEXT" \
+          port-forward -n {{.APP_NAMESPACE}} svc/apiserver 19443:443 > /dev/null 2>&1 &
+        PF_APISERVER_PID=$!
+
+        # Reliable cleanup
+        CLEANUP="kill $PF_ZITADEL_PID $PF_APISERVER_PID $KUBECTL_PROXY_PID 2>/dev/null || true; kubectl --context \"$KUBE_CONTEXT\" delete -f config/samples/resourcemanager/v1alpha/project.yaml --ignore-not-found 2>/dev/null || true"
+        trap "$CLEANUP" EXIT
+        
+        sleep 5
+
+        echo "Obtaining ZITADEL token..."
+        # Wait for ZITADEL to be reachable
+        for i in {1..10}; do
+          if curl -k -s --connect-timeout 2 https://localhost:18443/debug/healthz > /dev/null; then
+             break
+          fi
+          echo "Waiting for ZITADEL port-forward (attempt $i)..."
+          sleep 2
+        done
+
+        MACHINE_KEY_JSON=$(kubectl --context "$KUBE_CONTEXT" \
+          get secret iam-admin \
+          -n {{.APP_NAMESPACE}} \
+          -o jsonpath='{.data.iam-admin\.json}' | base64 -d)
+
+        # macOS mktemp suffix workaround
+        TMPKEY=$(mktemp /tmp/zitadel-key-XXXXXX.json)
+        echo "$MACHINE_KEY_JSON" > "$TMPKEY"
+        CLEANUP="$CLEANUP; rm -f $TMPKEY"
+        trap "$CLEANUP" EXIT
+
+        JWT_TOKEN=$("{{.TOOL_DIR}}/zitadel-tools" key2jwt \
+          --audience="https://zitadel.zitadel-system.svc.cluster.local" \
+          --key="$TMPKEY")
+
+        echo "Requesting token from Zitadel..."
+        # We temporarily disable pipefail/exit on error to capture the response even if jq fails
+        set +e
+        RESPONSE=$(curl --location "https://localhost:18443/oauth/v2/token" \
+          --header 'Content-Type: application/x-www-form-urlencoded' \
+          --header 'Host: zitadel.zitadel-system.svc.cluster.local' \
+          --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+          --data-urlencode 'scope=urn:zitadel:iam:org:project:id:zitadel:aud' \
+          --data-urlencode "assertion=$JWT_TOKEN" \
+          --insecure \
+          --show-error --silent)
+        
+        ZITADEL_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token' 2>/dev/null)
+        set -e
+
+        if [ -z "$ZITADEL_TOKEN" ] || [ "$ZITADEL_TOKEN" == "null" ]; then
+          echo "ERROR: Failed to obtain ZITADEL token. Response: $RESPONSE"
+          exit 1
+        fi
+
+        echo "--- Running Chainsaw reconciliation tests ---"
+        if [ -z "{{.CLI_ARGS}}" ]; then
+          # Chainsaw will find all chainsaw-test.yaml files recursively in the test directory
+          TEST_PATHS="test"
+        else
+          TEST_PATHS=""
+          for dir in {{.CLI_ARGS}}; do
+            [ -d "test/$dir" ] && TEST_PATHS="$TEST_PATHS test/$dir" || \
+              echo "Warning: test/$dir not found, skipping"
+          done
+        fi
+
+        ZITADEL_DOMAIN="https://localhost:18443" \
+        ZITADEL_TOKEN="$ZITADEL_TOKEN" \
+        "{{.TOOL_DIR}}/chainsaw" test $TEST_PATHS \
+          --kube-context "$KUBE_CONTEXT"
+    silent: true
+
+  # ============================================================
+  # Build tasks
+  # ============================================================
+
+  dev:build:
+    desc: Build the auth-provider-zitadel container image
+    silent: true
+    cmds:
+      - |
+        set -e
+        GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+        VERSION="v0.0.0-dev+${GIT_COMMIT:0:7}"
+        BUILD_DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "unknown")
+
+        echo "Building image {{.IMAGE_NAME}}:{{.IMAGE_TAG}}..."
+        docker build \
+          --build-arg VERSION="${VERSION}" \
+          --build-arg GIT_COMMIT="${GIT_COMMIT}" \
+          --build-arg BUILD_DATE="${BUILD_DATE}" \
+          -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}} \
+          .
+        echo "Image built: {{.IMAGE_NAME}}:{{.IMAGE_TAG}}"
+
+  dev:load:
+    desc: Load the container image into the Kind cluster
+    silent: true
+    cmds:
+      - |
+        set -e
+        echo "Loading {{.IMAGE_NAME}}:{{.IMAGE_TAG}} into kind cluster '{{.TEST_INFRA_CLUSTER_NAME}}'..."
+        kind load docker-image "{{.IMAGE_NAME}}:{{.IMAGE_TAG}}" \
+          --name "{{.TEST_INFRA_CLUSTER_NAME}}"
+        echo "Image loaded."
+
+  # ============================================================
+  # Existing tasks (preserved)
+  # ============================================================
 
   generate-webhookserver-certs:
     desc: Generate all certificates for webhook server
@@ -38,7 +406,7 @@ tasks:
             --zitadel-domain "{{.ZITADEL_DOMAIN}}" \
             --jwt-expiration 1h \
             --metrics-bind-address :8081
-            
+
   run-actionsserver:
     desc: Run the HTTP actions server locally
     deps:
@@ -49,5 +417,45 @@ tasks:
             --addr :8443 \
             --kubeconfig ~/.kube/config \
             --disable-signature-validation=true
-  
 
+  # ============================================================
+  # Internal helpers
+  # ============================================================
+
+  install-go-tool:
+    desc: Install a Go tool (internal)
+    silent: true
+    internal: true
+    cmds:
+      - mkdir -p {{.TOOL_DIR}}
+      - |
+        set -e
+        _NAME="{{.NAME}}"
+        _PACKAGE="{{.PACKAGE}}"
+        _VERSION="{{.VERSION}}"
+        _TOOL_DIR="{{.TOOL_DIR}}"
+        _VERSIONED="$_TOOL_DIR/$_NAME-$_VERSION"
+        _SYMLINK="$_TOOL_DIR/$_NAME"
+
+        if [ ! -f "$_VERSIONED" ]; then
+          echo "Downloading $_PACKAGE@$_VERSION..."
+          rm -f "$_SYMLINK" || true
+          GOBIN="$_TOOL_DIR" go install "$_PACKAGE@$_VERSION"
+          if [ ! -f "$_SYMLINK" ]; then
+            echo "ERROR: go install did not produce $_SYMLINK"
+            exit 1
+          fi
+          mv "$_SYMLINK" "$_VERSIONED"
+        fi
+        (cd "$_TOOL_DIR" && ln -sf "$_NAME-$_VERSION" "$_NAME")
+
+  zitadel-tools:
+    desc: Ensure zitadel-tools binary is available
+    silent: true
+    internal: true
+    cmds:
+      - task: install-go-tool
+        vars:
+          NAME: zitadel-tools
+          PACKAGE: github.com/zitadel/zitadel-tools
+          VERSION: latest

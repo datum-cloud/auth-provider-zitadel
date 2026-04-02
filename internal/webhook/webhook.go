@@ -5,9 +5,6 @@ import (
 	"fmt"
 
 	"go.miloapis.com/auth-provider-zitadel/pkg/token"
-	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -16,7 +13,7 @@ type Webhook struct {
 	Endpoint string
 }
 
-func NewAuthenticationWebhookV1(introspector *token.Introspector, kubeClient client.Client) *Webhook {
+func NewAuthenticationWebhookV1(introspector *token.Introspector) *Webhook {
 	return &Webhook{
 		Handler: HandlerFunc(func(ctx context.Context, request Request) Response {
 			log := logf.Log.WithName("authentication-webhook").WithValues()
@@ -48,19 +45,7 @@ func NewAuthenticationWebhookV1(introspector *token.Introspector, kubeClient cli
 				return Denied("token introspection failed: " + err.Error())
 			}
 			sub := claims.Sub
-
-			// Get User for retrieval of Registration Approval Status
-			userObj := &iammiloapiscomv1alpha1.User{}
-			if err := kubeClient.Get(ctx, client.ObjectKey{Name: sub}, userObj); err != nil {
-				if apierrors.IsNotFound(err) {
-					log.Info("Authentication failed: user resource not found", "user", sub)
-					return Denied("user resource not found")
-				}
-				log.Error(err, "Failed to fetch User resource", "user", sub)
-				return Denied(fmt.Sprintf("failed to fetch user resource: %v", err))
-			}
-
-			return Allowed(username, sub, userObj.Status.RegistrationApproval)
+			return Allowed(username, sub)
 		}),
 		Endpoint: "/apis/authentication.k8s.io/v1/tokenreviews",
 	}

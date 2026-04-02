@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zitadel-postgresql
+  namespace: zitadel-system
+stringData:
+  password: zitadel
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zitadel-postgresql
+  namespace: zitadel-system
+spec:
+  selector:
+    matchLabels:
+      app: zitadel-postgresql
+  serviceName: zitadel-postgresql
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: zitadel-postgresql
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_USER
+              value: zitadel
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: zitadel-postgresql
+                  key: password
+            - name: POSTGRES_DB
+              value: zitadel
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - zitadel
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zitadel-postgresql
+  namespace: zitadel-system
+spec:
+  selector:
+    app: zitadel-postgresql
+  ports:
+    - port: 5432
+      targetPort: 5432

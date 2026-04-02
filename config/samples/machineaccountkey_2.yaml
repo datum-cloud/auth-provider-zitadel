@@ -1,0 +1,17 @@
+apiVersion: iam.miloapis.com/v1alpha1
+kind: MachineAccountKey
+metadata:
+  name: example-service-account-key
+  namespace: default
+spec:
+  machineAccountName: example-service-account
+  publicKey: |
+    -----BEGIN PUBLIC KEY-----
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7lUPB1oC5fC81f6RYGRt
+    5o2mOT7hAX7DIrVrTgdAQ05l2I7aqYBXesrlJ9pM7TgskD7h2toc2hq+ebULkAo7
+    zixm3xBsJwc6xrZ5ze7xk5gRng4NFO1ietsOCVkIdMjSf+XiQgLM/p6eYo4kWrnq
+    xJRA3noMWeu6CMDnIyZbfgMZOvg8QXPNAuAbZm1DYqXZ7D6tlYnowK6/utGl6JbJ
+    ddJMexHvF1RPBg30DfzgUYUJGAjw64GP1RTI6/2T81OEVavTuUTbyFF95tGlY1Tn
+    vYmfP6DXrlVQ4LbwJRAIAL5uBQNBXJiIdco8m3MpkNRqBeXkSPpuT9aUgJ5kANfi
+    8wIDAQAB
+    -----END PUBLIC KEY-----

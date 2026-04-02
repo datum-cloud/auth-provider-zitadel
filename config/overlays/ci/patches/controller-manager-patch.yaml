@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller-manager
+          imagePullPolicy: Never
+          env:
+            - name: ZITADEL_BASE_URL
+              value: "https://zitadel.zitadel-system.svc.cluster.local"
+            - name: ZITADEL_MACHINE_ACCOUNT_KEY_PATH
+              value: "/etc/zitadel/iam-admin.json"
+            - name: ZITADEL_SDK_DOMAIN
+              value: "zitadel.zitadel-system.svc.cluster.local"
+            - name: ZITADEL_SDK_ISSUER
+              value: "https://zitadel.zitadel-system.svc.cluster.local"
+            - name: ZITADEL_DEFAULT_MACHINE_KEY_EXPIRATION
+              value: "87600h"
+            - name: ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH
+              value: "/etc/controller-manager/controller-manager-config.yaml"
+            - name: LEADER_ELECT
+              value: "false"
+            - name: SSL_CERT_FILE
+              value: "/etc/ssl/ci-ca/tls.crt"
+          volumeMounts:
+            - name: machine-account-key
+              mountPath: /etc/zitadel
+              readOnly: true
+            - name: controller-manager-config
+              mountPath: /etc/controller-manager/controller-manager-config.yaml
+              subPath: controller-manager-config.yaml
+              readOnly: true
+            - name: ci-ca
+              mountPath: /etc/ssl/ci-ca
+              readOnly: true
+      volumes:
+        - name: machine-account-key
+          secret:
+            secretName: iam-admin
+        - name: controller-manager-config
+          configMap:
+            name: controller-manager-config
+        - name: ci-ca
+          secret:
+            secretName: ci-ca-secret
+            items:
+              - key: tls.crt
+                path: tls.crt

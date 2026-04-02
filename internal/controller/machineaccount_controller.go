@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -33,7 +34,7 @@ import (
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
-	"go.miloapis.com/auth-provider-zitadel/internal/zitadel"
+	pkgzitadel "go.miloapis.com/auth-provider-zitadel/pkg/zitadel"
 )
 
 const (
@@ -42,16 +43,16 @@ const (
 	activeMachineAccountState   = "Active"
 )
 
-// MachineAccountReconciler reconciles a MachineAccount object
+// MachineAccountController reconciles a MachineAccount object
 type MachineAccountController struct {
 	Finalizers         finalizer.Finalizers
-	Zitadel            *zitadel.Client
+	Zitadel            pkgzitadel.API
 	EmailAddressSuffix string
 	mgr                mcmanager.Manager
 }
 
 type machineAccountFinalizer struct {
-	Zitadel *zitadel.Client
+	Zitadel pkgzitadel.API
 }
 
 func (f *machineAccountFinalizer) Finalize(ctx context.Context, obj client.Object) (finalizer.Result, error) {
@@ -66,26 +67,28 @@ func (f *machineAccountFinalizer) Finalize(ctx context.Context, obj client.Objec
 		return finalizer.Result{}, fmt.Errorf("type assertion failed: %w", err)
 	}
 
-	log.Info("Checking if machine account exists in Zitadel", "username", machineAccount.GetUID())
-	_, err := f.Zitadel.GetUser(ctx, string(machineAccount.GetUID()))
-	if errors.IsNotFound(err) {
-		log.Info("Machine account not found in Zitadel, nothing to clean up", "uid", machineAccount.GetUID())
+	userID := string(machineAccount.GetUID())
+	log.Info("Checking if machine account exists in Zitadel", "userID", userID)
+
+	user, err := f.Zitadel.GetUserByID(ctx, userID)
+	if err != nil {
+		log.Error(err, "Failed to get user from Zitadel", "userID", userID)
+		return finalizer.Result{}, fmt.Errorf("get user by id: %w", err)
+	}
+
+	if user == nil {
+		log.Info("Machine account not found in Zitadel, nothing to clean up", "userID", userID)
 		return finalizer.Result{}, nil
-	} else if err != nil {
-		log.Error(err, "Failed to get user from Zitadel", "userName", machineAccount.GetUID())
-		return finalizer.Result{}, fmt.Errorf("failed to get user from Zitadel: %w", err)
 	}
 
-	log.Info("Deleting machine account from Zitadel", "userName", machineAccount.GetUID())
-	err = f.Zitadel.DeleteUser(ctx, string(machineAccount.GetUID()))
-	if errors.IsNotFound(err) {
-		log.Info("Machine account already deleted from Zitadel", "username", machineAccount.GetUID())
-	} else if err != nil {
-		log.Error(err, "Failed to delete user from Zitadel", "username", machineAccount.GetUID())
-		return finalizer.Result{}, fmt.Errorf("failed to delete user from Zitadel: %w", err)
+	log.Info("Deleting machine account from Zitadel", "userID", userID)
+	err = f.Zitadel.DeleteUser(ctx, userID)
+	if err != nil {
+		log.Error(err, "Failed to delete user from Zitadel", "userID", userID)
+		return finalizer.Result{}, fmt.Errorf("delete user: %w", err)
 	}
 
-	log.Info("Successfully finalized machine account", "username", machineAccount.GetUID())
+	log.Info("Successfully finalized machine account", "userID", userID)
 	return finalizer.Result{}, nil
 }
 
@@ -106,9 +109,9 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	log := logf.FromContext(ctx).WithName("machineaccount-reconciler")
 	log.Info("Starting reconciliation", "request", req)
 
-	cluster, err := r.mgr.ClusterFromContext(ctx)
+	cluster, err := r.mgr.GetCluster(ctx, req.ClusterName)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get cluster from reconcile context: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster %s from manager: %w", req.ClusterName, err)
 	}
 
 	machineAccount := &iammiloapiscomv1alpha1.MachineAccount{}
@@ -138,32 +141,51 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 		return ctrl.Result{}, nil
 	}
 
-	maComputedEmail := r.computeEmailAddress(machineAccount, req)
-	log.Info("Checking if machine account exists in Zitadel", "username", machineAccount.GetUID())
-	_, err = r.Zitadel.GetUser(ctx, string(machineAccount.GetUID()))
-	if errors.IsNotFound(err) {
-		log.Info("Machine account not found in Zitadel, creating it", "username", machineAccount.GetUID())
-		// Create the machine account in Zitadel.
-		// UID is used instead of Name as UID is never reused
-		_, err := r.Zitadel.CreateMachineUser(ctx, zitadel.MachineUserRequest{
-			UserName:        maComputedEmail,
-			Name:            string(machineAccount.GetUID()),
-			AccessTokenType: zitadel.AccessTokenTypeJWT,
-			UserId:          string(machineAccount.GetUID()),
-		})
-		if err != nil {
-			log.Error(err, "Failed to create machine user in Zitadel", "username", machineAccount.GetUID())
-			return ctrl.Result{}, fmt.Errorf("failed to create machine user in Zitadel: %w", err)
+	// Resolve the Zitadel Organization ID for this machine account's project.
+	// The cluster name is /{project-name}, so strip the leading / to get the project name.
+	// The project name is used as the Zitadel org ID.
+	orgID := strings.TrimPrefix(req.ClusterName, "/")
+	log.V(2).Info("Checking if Zitadel organization exists", "orgID", orgID)
+	org, err := r.Zitadel.GetOrganization(ctx, orgID)
+	if err != nil {
+		log.Error(err, "Failed to check if Zitadel Organization exists", "orgID", orgID)
+		return ctrl.Result{}, fmt.Errorf("get organization: %w", err)
+	}
+
+	if org == nil {
+		log.Info("Zitadel Organization does not exist, creating it", "orgID", orgID)
+		if _, err := r.Zitadel.CreateOrganizationWithID(ctx, orgID, orgID); err != nil {
+			log.Error(err, "Failed to create Zitadel Organization", "orgID", orgID)
+			return ctrl.Result{}, fmt.Errorf("create organization: %w", err)
 		}
-		log.Info("Successfully created machine account in Zitadel", "username", machineAccount.GetUID())
-	} else if err != nil {
-		log.Error(err, "Failed to get user from Zitadel", "username", machineAccount.GetUID())
-		return ctrl.Result{}, fmt.Errorf("failed to get user from Zitadel: %w", err)
+		log.Info("Successfully created Zitadel Organization", "orgID", orgID)
+	}
+
+	maComputedEmail := r.computeEmailAddress(machineAccount, req)
+	userID := string(machineAccount.GetUID())
+	log.Info("Checking if machine account exists in Zitadel", "userID", userID, "orgID", orgID)
+
+	user, err := r.Zitadel.GetUserByID(ctx, userID)
+	if err != nil {
+		log.Error(err, "Failed to get user from Zitadel", "userID", userID)
+		return ctrl.Result{}, fmt.Errorf("get user by id: %w", err)
+	}
+
+	if user == nil {
+		log.Info("Machine account not found in Zitadel, creating it", "userID", userID, "orgID", orgID)
+		// Create the machine account in the project's Zitadel Organization.
+		// UID is used instead of Name as UID is never reused.
+		_, err := r.Zitadel.AddMachineUserInOrganization(ctx, orgID, userID, maComputedEmail, machineAccount.GetName())
+		if err != nil {
+			log.Error(err, "Failed to create machine user in Zitadel", "userID", userID, "orgID", orgID)
+			return ctrl.Result{}, fmt.Errorf("add machine user in organization: %w", err)
+		}
+		log.Info("Successfully created machine account in Zitadel", "userID", userID, "orgID", orgID)
 	}
 
 	// Update the machine account state in Zitadel if it is different from the desired state
 	if machineAccount.Status.State != machineAccount.Spec.State {
-		if err := r.updateMachineAccountState(ctx, machineAccount); err != nil {
+		if err := r.updateMachineAccountState(ctx, orgID, machineAccount); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update machine account state: %w", err)
 		}
 	}
@@ -194,22 +216,24 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 }
 
 // updateMachineAccountState updates the state of a machine account in Zitadel
-func (r *MachineAccountController) updateMachineAccountState(ctx context.Context, machineAccount *iammiloapiscomv1alpha1.MachineAccount) error {
+func (r *MachineAccountController) updateMachineAccountState(ctx context.Context, orgID string, machineAccount *iammiloapiscomv1alpha1.MachineAccount) error {
 	log := logf.FromContext(ctx).WithName("machineaccount-reconciler")
 
+	userID := string(machineAccount.GetUID())
 	skipUpdate := false
-	var updateFnc func(ctx context.Context, userID string) error
+	var updateFnc func(ctx context.Context, orgID, userID string) error
+
 	switch machineAccount.Spec.State {
 	case activeMachineAccountState:
 		if machineAccount.Status.State == "" {
 			log.Info("New Machine Account. Zitadel default state is Active")
 			skipUpdate = true
 		}
-		log.Info("Reactivating machine account", "username", machineAccount.GetName())
+		log.Info("Reactivating machine account", "userID", userID, "orgID", orgID)
 		updateFnc = r.Zitadel.ReactivateUser
 
 	case inactiveMachineAccountState:
-		log.Info("Deactivating machine account", "username", machineAccount.GetName())
+		log.Info("Deactivating machine account", "userID", userID, "orgID", orgID)
 		updateFnc = r.Zitadel.DeactivateUser
 
 	default:
@@ -218,14 +242,14 @@ func (r *MachineAccountController) updateMachineAccountState(ctx context.Context
 	}
 
 	if !skipUpdate {
-		log.Info("Updating machine account state", "username", machineAccount.GetName())
-		err := updateFnc(ctx, string(machineAccount.GetUID()))
-		if !errors.IsNotFound(err) {
-			log.Error(err, "Failed to update machine account on Zitadel", "username", machineAccount.GetName())
+		log.Info("Updating machine account state", "userID", userID, "orgID", orgID)
+		err := updateFnc(ctx, orgID, userID)
+		if err != nil {
+			log.Error(err, "Failed to update machine account on Zitadel", "userID", userID, "orgID", orgID)
 			return err
 		}
 
-		log.Info("Successfully updated machine account", "username", machineAccount.GetName())
+		log.Info("Successfully updated machine account", "userID", userID, "orgID", orgID)
 	}
 
 	return nil
@@ -249,7 +273,8 @@ func (r *MachineAccountController) SetupWithManager(mgr mcmanager.Manager) error
 }
 
 // computeEmailAddress computes the email address for a machine account
-// EmailAddress is {metadata.name}@{metadata.namespace}.{project.metadata.name}.{EmailAddressSuffix}
+// EmailAddress is {metadata.name}@{project-name}.{EmailAddressSuffix}
 func (r *MachineAccountController) computeEmailAddress(machineAccount *iammiloapiscomv1alpha1.MachineAccount, req mcreconcile.Request) string {
-	return string(machineAccount.GetUID()) + "@" + machineAccount.GetNamespace() + "." + req.ClusterName + "." + r.EmailAddressSuffix
+	projectName := strings.TrimPrefix(req.ClusterName, "/")
+	return machineAccount.GetName() + "@" + projectName + "." + r.EmailAddressSuffix
 }

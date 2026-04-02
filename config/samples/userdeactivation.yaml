@@ -1,0 +1,9 @@
+apiVersion: iam.miloapis.com/v1alpha1
+kind: UserDeactivation
+metadata:
+  name: john-doe-deactivation
+spec:
+  userRef:
+    name: john-doe
+  deactivatedBy: "admin@example.com"
+  reason: "Manual deactivation for testing"

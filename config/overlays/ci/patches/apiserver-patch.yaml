@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apiserver
+spec:
+  template:
+    spec:
+      containers:
+        - name: apiserver
+          imagePullPolicy: Never
+          env:
+            - name: ZITADEL_ISSUER
+              value: "https://zitadel.zitadel-system.svc.cluster.local"
+            - name: ZITADEL_API
+              value: "https://zitadel.zitadel-system.svc.cluster.local"
+            - name: SSL_CERT_FILE
+              value: "/etc/ssl/ci-ca/tls.crt"
+            - name: ZITADEL_MACHINE_ACCOUNT_KEY_PATH
+              value: "/etc/zitadel/iam-admin.json"
+            - name: TLS_CERT_FILE
+              value: "/etc/apiserver/tls/tls.crt"
+            - name: TLS_PRIVATE_KEY_FILE
+              value: "/etc/apiserver/tls/tls.key"
+            - name: REQUESTHEADER_CLIENT_CA_FILE
+              value: "/etc/kubernetes/pki/trust/ca.crt"
+            - name: REQUESTHEADER_ALLOWED_NAMES
+              value: "front-proxy-client"
+            - name: REQUESTHEADER_UID_HEADERS
+              value: "X-Remote-Uid,X-Remote-Extra-User-Uid"
+            - name: ENABLE_IMPERSONATION_FALLBACK
+              value: "true"
+          volumeMounts:
+            - name: machine-account-key
+              mountPath: /etc/zitadel
+              readOnly: true
+            - name: apiserver-tls
+              mountPath: /etc/apiserver/tls
+              readOnly: true
+            - name: requestheader-ca
+              mountPath: /etc/kubernetes/pki/trust
+              readOnly: true
+            - name: ci-ca
+              mountPath: /etc/ssl/ci-ca
+              readOnly: true
+      volumes:
+        - name: machine-account-key
+          secret:
+            secretName: iam-admin
+        - name: apiserver-tls
+          secret:
+            secretName: apiserver-tls
+        - name: requestheader-ca
+          configMap:
+            name: extension-apiserver-authentication
+            items:
+              - key: requestheader-client-ca-file
+                path: ca.crt
+        - name: ci-ca
+          secret:
+            secretName: ci-ca-secret
+            items:
+              - key: tls.crt
+                path: tls.crt

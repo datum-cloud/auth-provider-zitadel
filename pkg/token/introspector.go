@@ -33,6 +33,7 @@ type IntrospectionData struct {
 	Sub      string `json:"sub,omitempty"`
 	Email    string `json:"email,omitempty"`
 	Username string `json:"username,omitempty"`
+	ClientID string `json:"client_id,omitempty"`
 }
 
 // EffectiveUsername determines the most appropriate username to use from the
@@ -46,10 +47,13 @@ func (d *IntrospectionData) EffectiveUsername() (string, error) {
 	if d.Email != "" {
 		return d.Email, nil
 	}
+	if d.ClientID != "" {
+		return d.ClientID, nil
+	}
 	if d.Username != "" {
 		return d.Username, nil
 	}
-	return "", fmt.Errorf("neither email nor username claim found")
+	return "", fmt.Errorf("none of email, client_id or username claims found")
 }
 
 type Introspector struct {

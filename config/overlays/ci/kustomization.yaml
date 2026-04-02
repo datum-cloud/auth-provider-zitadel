@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: auth-provider-zitadel-system
+
+resources:
+  - ../../base
+  - cert-manager-certs.yaml
+  - configmaps.yaml
+  - identity-rbac.yaml
+
+# Override the image tag to use the locally-built dev image.
+# This affects all three services since they share the same image name.
+images:
+  - name: ghcr.io/datum-cloud/auth-provider-zitadel
+    newTag: dev
+
+patches:
+  - path: patches/controller-manager-patch.yaml
+    target:
+      kind: Deployment
+      name: controller-manager
+  - path: patches/authn-webhook-patch.yaml
+    target:
+      kind: Deployment
+      name: authn-webhook
+  - path: patches/apiserver-patch.yaml
+    target:
+      kind: Deployment
+      name: apiserver

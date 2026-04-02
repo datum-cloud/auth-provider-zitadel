@@ -1,0 +1,19 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: zitadel-tls
+  namespace: zitadel-system
+spec:
+  secretName: zitadel-tls
+  issuerRef:
+    name: ci-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - zitadel
+    - zitadel.zitadel-system
+    - zitadel.zitadel-system.svc
+    - zitadel.zitadel-system.svc.cluster.local
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth

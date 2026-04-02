@@ -1,0 +1,41 @@
+# TLS certificate for the apiserver serving endpoint
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apiserver-tls
+  namespace: auth-provider-zitadel-system
+spec:
+  secretName: apiserver-tls
+  issuerRef:
+    name: ci-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - apiserver
+    - apiserver.auth-provider-zitadel-system
+    - apiserver.auth-provider-zitadel-system.svc
+    - apiserver.auth-provider-zitadel-system.svc.cluster.local
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+---
+# TLS certificate for the authn-webhook serving endpoint
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: authn-webhook-tls
+  namespace: auth-provider-zitadel-system
+spec:
+  secretName: authn-webhook-tls
+  issuerRef:
+    name: ci-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - authn-webhook
+    - authn-webhook.auth-provider-zitadel-system
+    - authn-webhook.auth-provider-zitadel-system.svc
+    - authn-webhook.auth-provider-zitadel-system.svc.cluster.local
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth

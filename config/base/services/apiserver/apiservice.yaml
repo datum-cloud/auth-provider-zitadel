@@ -1,0 +1,16 @@
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1alpha1.identity.miloapis.com
+  annotations:
+    cert-manager.io/inject-ca-from: auth-provider-zitadel-system/apiserver-tls
+spec:
+  group: identity.miloapis.com
+  version: v1alpha1
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  service:
+    name: apiserver
+    namespace: auth-provider-zitadel-system
+    port: 443
+  insecureSkipTLSVerify: false

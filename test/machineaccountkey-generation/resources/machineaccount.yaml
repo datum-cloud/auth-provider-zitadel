@@ -1,0 +1,6 @@
+apiVersion: iam.miloapis.com/v1alpha1
+kind: MachineAccount
+metadata:
+  name: ma-generation
+spec:
+  state: Active

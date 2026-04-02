@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authn-webhook
+spec:
+  template:
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - name: authn-webhook
+          imagePullPolicy: Never
+          env:
+            - name: ZITADEL_DOMAIN
+              value: "https://zitadel.zitadel-system.svc.cluster.local"
+            - name: ZITADEL_PRIVATE_KEY_FILE_PATH
+              value: "/etc/zitadel/iam-admin.json"
+            - name: CERT_DIR
+              value: "/etc/webhook/certs"
+            - name: CERT_FILE
+              value: "tls.crt"
+            - name: KEY_FILE
+              value: "tls.key"
+            - name: SSL_CERT_FILE
+              value: "/etc/ssl/ci-ca/tls.crt"
+          volumeMounts:
+            - name: machine-account-key
+              mountPath: /etc/zitadel
+              readOnly: true
+            - name: webhook-tls
+              mountPath: /etc/webhook/certs
+              readOnly: true
+            - name: ci-ca
+              mountPath: /etc/ssl/ci-ca
+              readOnly: true
+      volumes:
+        - name: machine-account-key
+          secret:
+            secretName: iam-admin
+        - name: webhook-tls
+          secret:
+            secretName: authn-webhook-tls
+        - name: ci-ca
+          secret:
+            secretName: ci-ca-secret
+            items:
+              - key: tls.crt
+                path: tls.crt

@@ -1,0 +1,64 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: sync-resources-to-app-namespace
+spec:
+  # Replicate cross-namespace resources into auth-provider-zitadel-system
+  # so that pods can mount them without imperative copy scripts.
+  # Kyverno keeps copies in sync automatically.
+  # generateExisting ensures rules apply even if the namespace already exists
+  # when the policy is first applied.
+  generateExisting: true
+  background: true
+  rules:
+    - name: clone-iam-admin
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              names:
+                - auth-provider-zitadel-system
+      generate:
+        synchronize: true
+        apiVersion: v1
+        kind: Secret
+        name: iam-admin
+        namespace: auth-provider-zitadel-system
+        clone:
+          namespace: zitadel-system
+          name: iam-admin
+    - name: clone-ci-ca-secret
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              names:
+                - auth-provider-zitadel-system
+      generate:
+        synchronize: true
+        apiVersion: v1
+        kind: Secret
+        name: ci-ca-secret
+        namespace: auth-provider-zitadel-system
+        clone:
+          namespace: cert-manager
+          name: ci-ca-secret
+    - name: clone-requestheader-ca
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              names:
+                - auth-provider-zitadel-system
+      generate:
+        synchronize: true
+        apiVersion: v1
+        kind: ConfigMap
+        name: extension-apiserver-authentication
+        namespace: auth-provider-zitadel-system
+        clone:
+          namespace: kube-system
+          name: extension-apiserver-authentication

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +22,7 @@ import (
 	openapicommon "k8s.io/kube-openapi/pkg/common"
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 
+	registrymachineaccountkeys "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/machineaccountkeys"
 	registrysessions "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/sessions"
 	registryuseridentities "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/useridentities"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
@@ -48,9 +50,12 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 		requestHeaderUIDHeaders       []string
 		requestHeaderExtraHeadersPref []string
 		// Zitadel configuration (flags with env fallbacks)
-		zitadelIssuer  string
-		zitadelAPI     string
-		zitadelKeyPath string
+		zitadelIssuer                    string
+		zitadelAPI                       string
+		zitadelKeyPath                   string
+		zitadelDefaultMachineKeyExpirary time.Duration
+		// Local testing override
+		enableImpersonationFallback bool
 	)
 
 	cmd := &cobra.Command{
@@ -132,17 +137,19 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			}
 
 			zc, err := zitadel.NewSDK(context.Background(), zitadel.SDKConfig{
-				Issuer:  zitadelIssuer,
-				Domain:  zitadelAPI,
-				KeyPath: zitadelKeyPath,
+				Issuer:                      zitadelIssuer,
+				Domain:                      zitadelAPI,
+				KeyPath:                     zitadelKeyPath,
+				DefaultMachineKeyExpiration: zitadelDefaultMachineKeyExpirary,
 			})
 			if err != nil {
 				return fmt.Errorf("init zitadel sdk: %w", err)
 			}
 
 			storage := map[string]rest.Storage{
-				"sessions":       &registrysessions.REST{Z: zc},
-				"useridentities": &registryuseridentities.REST{Z: zc},
+				"sessions":           &registrysessions.REST{Z: zc},
+				"useridentities":     &registryuseridentities.REST{Z: zc},
+				"machineaccountkeys": &registrymachineaccountkeys.REST{Z: zc, EnableImpersonationFallback: enableImpersonationFallback},
 			}
 
 			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.SchemeGroupVersion.Group, scheme, metav1.ParameterCodec, codecs)
@@ -169,6 +176,8 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 	cmd.Flags().StringVar(&zitadelIssuer, "zitadel-issuer", "", "Zitadel issuer URL")
 	cmd.Flags().StringVar(&zitadelAPI, "zitadel-api", "", "Zitadel API base URL")
 	cmd.Flags().StringVar(&zitadelKeyPath, "zitadel-key", "", "Path to Zitadel machine account key")
+	cmd.Flags().DurationVar(&zitadelDefaultMachineKeyExpirary, "zitadel-default-machine-key-expiration", 10*365*24*time.Hour, "The default duration for machine account keys (defaults to 10 years)")
+	cmd.Flags().BoolVar(&enableImpersonationFallback, "enable-impersonation-fallback", false, "Enable looking up project ID from k8s impersonation extras (for local testing without Milo proxy)")
 
 	// Wire klog flags to this command so users can set verbosity with -v=N
 	goFS := flag.NewFlagSet("klog", flag.ContinueOnError)
