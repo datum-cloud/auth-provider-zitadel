@@ -16,10 +16,10 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: deactivation-ma
+            name: ma-generation
           status:
             state: Active
-            email: deactivation-ma@single.identity.miloapis.com
+            email: ma-generation@single.identity.miloapis.com
             conditions:
             - type: Ready
               status: "True"
@@ -27,14 +27,14 @@ spec:
         content: |
           set -e
           # Compute username
-          MA_UID=$(kubectl get machineaccount deactivation-ma -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="deactivation-ma@single.identity.miloapis.com"
+          MA_UID=$(kubectl get machineaccount ma-generation -o jsonpath='{.metadata.uid}')
+          MA_USERNAME="ma-generation@single.identity.miloapis.com"
           echo "$MA_USERNAME" > /tmp/ma_username.txt
 
           # Create Key without publicKey payload
           POST_RESPONSE=$(jq -n \
             --arg machineAccountUserName "$MA_USERNAME" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"gen-key"},spec:{machineAccountUserName:$machineAccountUserName}}' | \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"gen-key-ma-generation"},spec:{machineAccountUserName:$machineAccountUserName}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \

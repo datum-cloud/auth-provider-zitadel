@@ -20,10 +20,10 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: deactivation-ma
+            name: ma-lifecycle
           status:
             state: Active
-            email: deactivation-ma@single.identity.miloapis.com
+            email: ma-lifecycle@single.identity.miloapis.com
             conditions:
             - type: Ready
               status: "True"
@@ -36,15 +36,15 @@ spec:
           openssl rsa -in /tmp/deact-priv.pem -pubout -out /tmp/deact-pub.pem 2>/dev/null
 
           # The Zitadel username is the computed email: {name}@single.identity.miloapis.com
-          MA_UID=$(kubectl get machineaccount deactivation-ma -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="deactivation-ma@single.identity.miloapis.com"
+          MA_UID=$(kubectl get machineaccount ma-lifecycle -o jsonpath='{.metadata.uid}')
+          MA_USERNAME="ma-lifecycle@single.identity.miloapis.com"
 
           # Create the key via identity.miloapis.com, providing our own public key
           PUB_KEY=$(cat /tmp/deact-pub.pem)
           POST_RESPONSE=$(jq -n \
             --arg machineAccountUserName "$MA_USERNAME" \
             --arg publicKey "$PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"deact-key"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"deact-key-ma-lifecycle"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
@@ -102,7 +102,7 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: deactivation-ma
+            name: ma-lifecycle
           spec:
             state: Inactive
     - assert:
@@ -110,7 +110,7 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: deactivation-ma
+            name: ma-lifecycle
           status:
             state: Inactive
             conditions:
@@ -148,7 +148,7 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: deactivation-ma
+            name: ma-lifecycle
           spec:
             state: Active
     - assert:
@@ -156,7 +156,7 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: deactivation-ma
+            name: ma-lifecycle
           status:
             state: Active
             conditions:

@@ -1,6 +1,6 @@
 apiVersion: iam.miloapis.com/v1alpha1
 kind: MachineAccount
 metadata:
-  name: deactivation-ma
+  name: ma-lifecycle
 spec:
   state: Active

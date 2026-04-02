@@ -160,7 +160,7 @@ tasks:
         set -e
         echo "Installing IAM and Infrastructure CRDs..."
         task test-infra:kubectl -- apply \
-          -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=670-ma-api
+          -k https://github.com/datum-cloud/milo/config/crd/bases/iam
         task test-infra:kubectl -- apply \
           -k https://github.com/datum-cloud/milo/config/crd/bases/infrastructure?ref=v0.21.0
         task test-infra:kubectl -- apply \

@@ -19,7 +19,7 @@ spec:
           apiVersion: iam.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
-            name: deactivation-ma
+            name: ma-keys
           status:
             state: Active
             conditions:
@@ -29,15 +29,9 @@ spec:
         content: |
           set -e
 
-          # Start kubectl proxy
-          kubectl proxy --port=8001 &
-          PROXY_PID=$!
-          trap "kill $PROXY_PID 2>/dev/null || true" EXIT
-          sleep 1
-
           # The Zitadel username is the computed email: {name}@single.identity.miloapis.com
-          MA_UID=$(kubectl get machineaccount deactivation-ma -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="deactivation-ma@single.identity.miloapis.com"
+          MA_UID=$(kubectl get machineaccount ma-keys -o jsonpath='{.metadata.uid}')
+          MA_USERNAME="ma-keys@single.identity.miloapis.com"
           echo "$MA_USERNAME" > /tmp/ma_username.txt
 
           # Create Key 1
@@ -48,7 +42,7 @@ spec:
           POST_RESPONSE_1=$(jq -n \
             --arg machineAccountUserName "$MA_USERNAME" \
             --arg publicKey "$KEY1_PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key1"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key1-ma-keys"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
@@ -73,7 +67,7 @@ spec:
           POST_RESPONSE_2=$(jq -n \
             --arg machineAccountUserName "$MA_USERNAME" \
             --arg publicKey "$KEY2_PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key2"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key2-ma-keys"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
             curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
