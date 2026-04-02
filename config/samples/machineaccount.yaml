@@ -2,7 +2,6 @@ apiVersion: iam.miloapis.com/v1alpha1
 kind: MachineAccount
 metadata:
   name: example-service-account
-  namespace: default
   annotations:
     kubernetes.io/description: "Service account for automated CI/CD pipeline"
 spec:

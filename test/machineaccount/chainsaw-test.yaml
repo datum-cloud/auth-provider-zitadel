@@ -26,7 +26,6 @@ spec:
             kind: MachineAccount
             metadata:
               name: active-machineaccount
-              namespace: ($namespace)
             status:
               state: Active
               email: active-machineaccount@single.identity.miloapis.com
@@ -37,7 +36,6 @@ spec:
             kind: MachineAccount
             metadata:
               name: inactive-machineaccount
-              namespace: ($namespace)
             status:
               state: Inactive
               email: inactive-machineaccount@single.identity.miloapis.com
@@ -69,7 +67,6 @@ spec:
             kind: MachineAccount
             metadata:
               name: active-machineaccount
-              namespace: ($namespace)
             status:
               state: Inactive
               email: active-machineaccount@single.identity.miloapis.com
@@ -79,28 +76,23 @@ spec:
             kind: MachineAccount
             metadata:
               name: inactive-machineaccount
-              namespace: ($namespace)
             status:
               state: Active
               email: inactive-machineaccount@single.identity.miloapis.com
 
       # --- Verify Zitadel state after first flip -----------------------------------
       - script:
-          env:
-            - name: NAMESPACE
-              value: ($namespace)
           content: |
             set -e
-            echo "Using namespace: $NAMESPACE"
             # The controller uses the Kubernetes UID as the Zitadel UserID.
-            USER_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            USER_UID=$(kubectl get machineaccount active-machineaccount -o jsonpath='{.metadata.uid}')
             
             echo "Waiting for Zitadel reconciliation for user $USER_UID..."
             for i in 1 2 3 4 5 6 7 8 9 10; do
               RESPONSE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${USER_UID}" -H "Host: zitadel.zitadel-system.svc.cluster.local" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
               ACTIVE_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
-              
-              INACTIVE_USER_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+
+              INACTIVE_USER_UID=$(kubectl get machineaccount inactive-machineaccount -o jsonpath='{.metadata.uid}')
               RESPONSE_INACTIVE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${INACTIVE_USER_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
               INACTIVE_STATE=$(echo "$RESPONSE_INACTIVE" | jq -r '.user.state // empty')
               
@@ -135,21 +127,17 @@ spec:
 
       # --- Verify Zitadel state after reversion ---------------------------------
       - script:
-          env:
-            - name: NAMESPACE
-              value: ($namespace)
           content: |
             set -e
-            echo "Using namespace: $NAMESPACE"
             # The controller uses the Kubernetes UID as the Zitadel UserID.
-            USER_UID=$(kubectl get machineaccount active-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+            USER_UID=$(kubectl get machineaccount active-machineaccount -o jsonpath='{.metadata.uid}')
             
             echo "Waiting for Zitadel reconciliation for user $USER_UID..."
             for i in 1 2 3 4 5 6 7 8 9 10; do
               RESPONSE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${USER_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
               ACTIVE_STATE=$(echo "$RESPONSE" | jq -r '.user.state // empty')
-              
-              INACTIVE_USER_UID=$(kubectl get machineaccount inactive-machineaccount -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+
+              INACTIVE_USER_UID=$(kubectl get machineaccount inactive-machineaccount -o jsonpath='{.metadata.uid}')
               RESPONSE_INACTIVE=$(curl -s -L --insecure -H 'Host: zitadel.zitadel-system.svc.cluster.local' "$ZITADEL_DOMAIN/v2/users/${INACTIVE_USER_UID}" -H 'Accept: application/json' -H "Authorization: Bearer $ZITADEL_TOKEN")
               INACTIVE_STATE=$(echo "$RESPONSE_INACTIVE" | jq -r '.user.state // empty')
               

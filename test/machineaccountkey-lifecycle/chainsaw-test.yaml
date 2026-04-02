@@ -36,7 +36,7 @@ spec:
           openssl rsa -in /tmp/deact-priv.pem -pubout -out /tmp/deact-pub.pem 2>/dev/null
 
           # The Zitadel username is the computed email: {name}@single.identity.miloapis.com
-          MA_UID=$(kubectl get machineaccount deactivation-ma -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')
+          MA_UID=$(kubectl get machineaccount deactivation-ma -o jsonpath='{.metadata.uid}')
           MA_USERNAME="deactivation-ma@single.identity.miloapis.com"
 
           # Create the key via identity.miloapis.com, providing our own public key
