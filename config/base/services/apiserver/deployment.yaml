@@ -39,6 +39,7 @@ spec:
             - --zitadel-api=$(ZITADEL_API)
             - --zitadel-key=$(ZITADEL_MACHINE_ACCOUNT_KEY_PATH)
             - -v=4
+            - --enable-impersonation-fallback=$(ENABLE_IMPERSONATION_FALLBACK)
           env:
             - name: LOG_LEVEL
               value: "info"
@@ -66,6 +67,8 @@ spec:
               value: "X-Remote-Group"
             - name: REQUESTHEADER_UID_HEADERS
               value: "X-Remote-Uid"
+            - name: ENABLE_IMPERSONATION_FALLBACK
+              value: "false"
           ports:
             - name: https
               containerPort: 8443

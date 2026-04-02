@@ -28,7 +28,7 @@ spec:
             #   ZITADEL_DOMAIN – the base URL of the Zitadel instance (e.g. http://localhost:8080)
             #   ZITADEL_TOKEN  – a Management API token with user write permissions
             # We use the machine user endpoint to ensure a fixed ID that matches the Kubernetes resource name.
-            CURL_DATA='{"userId":"human-user","userName":"human-user@chainsaw-test.single.iam.miloapis.com","name":"Human User Simulator","accessTokenType":"ACCESS_TOKEN_TYPE_JWT"}'
+            CURL_DATA='{"userId":"human-user","userName":"human-user@single.identity.miloapis.com","name":"Human User Simulator","accessTokenType":"ACCESS_TOKEN_TYPE_JWT"}'
             
             # Try to create the user. Ignore errors if it already exists (the script will fail if curl fails, but we want to ignore 400 if user exists).
             RESPONSE=$(curl --silent --show-error --location --insecure \

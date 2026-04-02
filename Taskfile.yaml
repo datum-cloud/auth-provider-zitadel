@@ -158,15 +158,24 @@ tasks:
     cmds:
       - |
         set -e
-        echo "Installing IAM CRDs..."
+        echo "Installing IAM and Infrastructure CRDs..."
         task test-infra:kubectl -- apply \
-          -k https://github.com/datum-cloud/milo/config/crd/bases/iam?ref=v0.21.0
-        echo "IAM CRDs installed."
+          -k https://github.com/datum-cloud/milo/config/crd/bases/iam
+        task test-infra:kubectl -- apply \
+          -k https://github.com/datum-cloud/milo/config/crd/bases/infrastructure?ref=v0.21.0
+        task test-infra:kubectl -- apply \
+          -k https://github.com/datum-cloud/milo/config/crd/bases/resourcemanager?ref=v0.21.0
+        echo "Milo CRDs installed."
 
   ci:port-forward:
     desc: Port-forward nginx proxy to localhost:443 (routes /ui/v2/login to login UI, all else to Zitadel)
     cmds:
       - sudo kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n zitadel-system svc/zitadel-proxy 443:443
+
+  authn:port-forward:
+    desc: Port-forward the authn-webhook service to localhost:8443
+    cmds:
+      - kubectl --context kind-{{.TEST_INFRA_CLUSTER_NAME}} port-forward -n {{.APP_NAMESPACE}} svc/authn-webhook 8090:8090
 
   ci:deploy:
     desc: Deploy all three services using the CI overlay
@@ -198,6 +207,28 @@ tasks:
           -n {{.APP_NAMESPACE}} \
           --timeout=300s
 
+  ci:restart:
+    desc: Restart all three services by performing a rollout restart
+    silent: true
+    cmds:
+      - |
+        set -e
+        echo "Triggering Kyverno secret-sync policy for {{.APP_NAMESPACE}}..."
+        # Label the namespace with a timestamp to force an update event, prompting Kyverno to sync secrets
+        task test-infra:kubectl -- label namespace {{.APP_NAMESPACE}} kyverno-trigger=$(date +%s) --overwrite
+        sleep 5
+        
+        echo "Restarting deployments in {{.APP_NAMESPACE}}..."
+        task test-infra:kubectl -- rollout restart deployment/controller-manager -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout restart deployment/apiserver -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout restart deployment/authn-webhook -n {{.APP_NAMESPACE}}
+        
+        echo "Waiting for deployments to be ready again..."
+        task test-infra:kubectl -- rollout status deployment/controller-manager -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout status deployment/apiserver -n {{.APP_NAMESPACE}}
+        task test-infra:kubectl -- rollout status deployment/authn-webhook -n {{.APP_NAMESPACE}}
+        echo "All services restarted successfully."
+
         echo "All services deployed."
 
   # ============================================================
@@ -222,6 +253,14 @@ tasks:
         # Cleanup any orphaned port-forwards from previous runs on these specific ports
         lsof -i :18443 -t | xargs kill -9 > /dev/null 2>&1 || true
         lsof -i :19443 -t | xargs kill -9 > /dev/null 2>&1 || true
+        lsof -i :8001 -t | xargs kill -9 > /dev/null 2>&1 || true
+
+        echo "Applying Project resource..."
+        kubectl --context "$KUBE_CONTEXT" apply -f config/samples/resourcemanager/v1alpha/project.yaml
+
+        # Start kubectl proxy for native identity.miloapis.com CRD API testing
+        kubectl --context "$KUBE_CONTEXT" proxy --port=8001 > /dev/null 2>&1 &
+        KUBECTL_PROXY_PID=$!
 
         # Port-forward ZITADEL for token generation and direct API testing
         kubectl --context "$KUBE_CONTEXT" \
@@ -234,7 +273,7 @@ tasks:
         PF_APISERVER_PID=$!
 
         # Reliable cleanup
-        CLEANUP="kill $PF_ZITADEL_PID $PF_APISERVER_PID 2>/dev/null || true"
+        CLEANUP="kill $PF_ZITADEL_PID $PF_APISERVER_PID $KUBECTL_PROXY_PID 2>/dev/null || true; kubectl --context \"$KUBE_CONTEXT\" delete -f config/samples/resourcemanager/v1alpha/project.yaml --ignore-not-found 2>/dev/null || true"
         trap "$CLEANUP" EXIT
         
         sleep 5
@@ -286,7 +325,8 @@ tasks:
 
         echo "--- Running Chainsaw reconciliation tests ---"
         if [ -z "{{.CLI_ARGS}}" ]; then
-          TEST_PATHS="test/machineaccount test/userdeactivation"
+          # Chainsaw will find all chainsaw-test.yaml files recursively in the test directory
+          TEST_PATHS="test"
         else
           TEST_PATHS=""
           for dir in {{.CLI_ARGS}}; do

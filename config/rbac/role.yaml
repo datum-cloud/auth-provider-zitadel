@@ -60,3 +60,25 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - resourcemanager.miloapis.com
+  resources:
+  - projects
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - resourcemanager.miloapis.com
+  resources:
+  - projects/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resourcemanager.miloapis.com
+  resources:
+  - projects/status
+  verbs:
+  - get
+  - update
