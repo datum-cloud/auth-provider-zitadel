@@ -58,9 +58,34 @@ spec:
             exit 1
           fi
 
-          printf '%s\n' "$PRIVATE_KEY_JSON" | base64 -d > /tmp/zitadel-key-gen.json || printf '%s\n' "$PRIVATE_KEY_JSON" > /tmp/zitadel-key-gen.json
-          
-          echo "Successfully created MachineAccountKey and captured the privateKey payload!"
+          # status.privateKey is the Datum credentials file format used by
+          # datumctl. Support the same base64-or-raw fallback the old test had
+          # in case transports re-encode the field.
+          printf '%s\n' "$PRIVATE_KEY_JSON" | base64 -d > /tmp/datum-credentials.json 2>/dev/null || printf '%s\n' "$PRIVATE_KEY_JSON" > /tmp/datum-credentials.json
+
+          # Verify the Datum credentials file has all required fields.
+          CREDS_TYPE=$(jq -r '.type' /tmp/datum-credentials.json)
+          if [ "$CREDS_TYPE" != "datum_machine_account" ]; then
+            echo "ERROR: Expected credentials type 'datum_machine_account', got '$CREDS_TYPE'"
+            cat /tmp/datum-credentials.json
+            exit 1
+          fi
+          for field in client_id private_key_id private_key client_email; do
+            VALUE=$(jq -r ".${field}" /tmp/datum-credentials.json)
+            if [ -z "$VALUE" ] || [ "$VALUE" == "null" ]; then
+              echo "ERROR: Datum credentials missing required field: $field"
+              cat /tmp/datum-credentials.json
+              exit 1
+            fi
+          done
+
+          # Convert the Datum credentials to Zitadel's native key-file format so
+          # zitadel-tools key2jwt (which expects Zitadel's shape) can sign a
+          # JWT assertion from the generated private key in the next step.
+          jq '{type: "serviceaccount", keyId: .private_key_id, key: .private_key, userId: .client_id}' \
+            /tmp/datum-credentials.json > /tmp/zitadel-key-gen.json
+
+          echo "Successfully created MachineAccountKey and captured the Datum credentials payload!"
 
   - name: verify-generated-key-works
     try:
