@@ -143,10 +143,10 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 
 	// Resolve the Zitadel Organization ID for this machine account's project.
 	// The cluster name is /{project-name}, so strip the leading / to get the project name.
-	// The org ID is prefixed with "project-" to avoid collisions with
-	// infrastructure-managed Zitadel organizations that use the bare project name.
+	// The org ID is prefixed to avoid collisions with infrastructure-managed
+	// Zitadel organizations that use the bare project name.
 	projectName := strings.TrimPrefix(req.ClusterName, "/")
-	orgID := "project-" + projectName
+	orgID := pkgzitadel.OrgIDForProject(projectName)
 	log.V(2).Info("Checking if Zitadel organization exists", "orgID", orgID)
 	org, err := r.Zitadel.GetOrganization(ctx, orgID)
 	if err != nil {

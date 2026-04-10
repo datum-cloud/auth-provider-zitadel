@@ -31,8 +31,7 @@ type REST struct {
 
 // getOrgID resolves the Zitadel organization ID from the request context.
 // The project name is extracted from Milo IAM parent extras or impersonation
-// extras, then prefixed with "project-" to form the org ID. This prefix avoids
-// collisions with infrastructure-managed Zitadel organizations.
+// extras, then converted to an org ID via zitadel.OrgIDForProject.
 func (r *REST) getOrgID(ctx context.Context) (string, bool) {
 	var projectName string
 
@@ -59,7 +58,7 @@ func (r *REST) getOrgID(ctx context.Context) (string, bool) {
 		return "", false
 	}
 
-	return "project-" + projectName, true
+	return zitadel.OrgIDForProject(projectName), true
 }
 
 var _ rest.Creater = &REST{} //nolint:misspell

@@ -61,7 +61,7 @@ func (f *projectFinalizer) Finalize(ctx context.Context, obj client.Object) (fin
 		return finalizer.Result{}, err
 	}
 
-	orgID := "project-" + project.GetName()
+	orgID := pkgzitadel.OrgIDForProject(project.GetName())
 	log.Info("Deleting Zitadel Organization", "orgID", orgID)
 
 	err := f.Zitadel.DeleteOrganization(ctx, orgID)
