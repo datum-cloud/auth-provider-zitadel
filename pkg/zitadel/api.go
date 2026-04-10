@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// OrgIDForProject returns the Zitadel organization ID for a given project name.
+// The "project-" prefix ensures the controller's org does not collide with
+// infrastructure-managed organizations that use the bare project name.
+func OrgIDForProject(projectName string) string {
+	return "project-" + projectName
+}
+
 // Session represents a Zitadel session distilled for Kubernetes exposure.
 type Session struct {
 	ID            string

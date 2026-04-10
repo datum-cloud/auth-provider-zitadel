@@ -143,8 +143,10 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 
 	// Resolve the Zitadel Organization ID for this machine account's project.
 	// The cluster name is /{project-name}, so strip the leading / to get the project name.
-	// The project name is used as the Zitadel org ID.
-	orgID := strings.TrimPrefix(req.ClusterName, "/")
+	// The org ID is prefixed to avoid collisions with infrastructure-managed
+	// Zitadel organizations that use the bare project name.
+	projectName := strings.TrimPrefix(req.ClusterName, "/")
+	orgID := pkgzitadel.OrgIDForProject(projectName)
 	log.V(2).Info("Checking if Zitadel organization exists", "orgID", orgID)
 	org, err := r.Zitadel.GetOrganization(ctx, orgID)
 	if err != nil {
@@ -153,12 +155,12 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	}
 
 	if org == nil {
-		log.Info("Zitadel Organization does not exist, creating it", "orgID", orgID)
-		if _, err := r.Zitadel.CreateOrganizationWithID(ctx, orgID, orgID); err != nil {
+		log.Info("Zitadel Organization does not exist, creating it", "orgID", orgID, "displayName", projectName)
+		if _, err := r.Zitadel.CreateOrganizationWithID(ctx, projectName, orgID); err != nil {
 			log.Error(err, "Failed to create Zitadel Organization", "orgID", orgID)
 			return ctrl.Result{}, fmt.Errorf("create organization: %w", err)
 		}
-		log.Info("Successfully created Zitadel Organization", "orgID", orgID)
+		log.Info("Successfully created Zitadel Organization", "orgID", orgID, "displayName", projectName)
 	}
 
 	maComputedEmail := r.computeEmailAddress(machineAccount, req)

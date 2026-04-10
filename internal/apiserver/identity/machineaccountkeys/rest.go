@@ -29,32 +29,36 @@ type REST struct {
 	EnableImpersonationFallback bool
 }
 
-// getProjectID attempts to find the Project/Org ID from:
-//  1. Milo's IAM parent extras (set by ProjectContextAuthorizationDecorator for requests
-//     routed through /projects/{id}/control-plane/...)
-//  2. Kubernetes Impersonation Extras for local testing via:
-//     kubectl ... --as admin --as-extra=project=my-org-id
-func (r *REST) getProjectID(ctx context.Context) (string, bool) {
+// getOrgID resolves the Zitadel organization ID from the request context.
+// The project name is extracted from Milo IAM parent extras or impersonation
+// extras, then converted to an org ID via zitadel.OrgIDForProject.
+func (r *REST) getOrgID(ctx context.Context) (string, bool) {
+	var projectName string
+
 	if userInfo, ok := request.UserFrom(ctx); ok {
 		extras := userInfo.GetExtra()
-		// Primary path: project ID forwarded as IAM parent extras by Milo's
+		// Primary path: project name forwarded as IAM parent extras by Milo's
 		// ProjectContextAuthorizationDecorator when routing via /projects/{id}/control-plane/...
 		if kinds := extras["iam.miloapis.com/parent-type"]; len(kinds) > 0 && kinds[0] == "Project" {
 			if names := extras["iam.miloapis.com/parent-name"]; len(names) > 0 && names[0] != "" {
-				return names[0], true
+				projectName = names[0]
 			}
 		}
 
 		// Fallback for local testing when running the apiserver outside of the ProjectRouter.
-		if r.EnableImpersonationFallback {
+		if projectName == "" && r.EnableImpersonationFallback {
 			if projects := extras["project"]; len(projects) > 0 && projects[0] != "" {
-				klog.V(4).InfoS("Found project ID from impersonation extras (local testing fallback)", "orgID", projects[0])
-				return projects[0], true
+				klog.V(4).InfoS("Found project name from impersonation extras (local testing fallback)", "projectName", projects[0])
+				projectName = projects[0]
 			}
 		}
 	}
 
-	return "", false
+	if projectName == "" {
+		return "", false
+	}
+
+	return zitadel.OrgIDForProject(projectName), true
 }
 
 var _ rest.Creater = &REST{} //nolint:misspell
@@ -103,7 +107,7 @@ func (r *REST) Create(
 	}
 
 	// Extract organization ID from request context (set by ProjectRouter or Impersonation)
-	orgID, ok := r.getProjectID(ctx)
+	orgID, ok := r.getOrgID(ctx)
 	if !ok || orgID == "" {
 		klog.ErrorS(nil, "Missing organization ID in request context or impersonation extras")
 		return nil, apierrors.NewBadRequest("request must be made within a project context (/projects/{projectID}/control-plane/...) or use --as-extra=project={orgID} for testing")
@@ -262,7 +266,7 @@ func (r *REST) List(
 	ctx context.Context,
 	options *internalversion.ListOptions,
 ) (runtime.Object, error) {
-	orgID, ok := r.getProjectID(ctx)
+	orgID, ok := r.getOrgID(ctx)
 	if !ok || orgID == "" {
 		klog.ErrorS(nil, "Missing organization ID in request context")
 		return nil, apierrors.NewBadRequest("request must be made within a project context (/projects/{projectID}/control-plane/...) or use --as-extra=project={orgID} for testing")
@@ -437,7 +441,7 @@ func (r *REST) Delete(
 	deleteValidation rest.ValidateObjectFunc,
 	options *metav1.DeleteOptions,
 ) (runtime.Object, bool, error) {
-	orgID, ok := r.getProjectID(ctx)
+	orgID, ok := r.getOrgID(ctx)
 	if !ok || orgID == "" {
 		klog.ErrorS(nil, "Missing organization ID in request context")
 		return nil, false, apierrors.NewBadRequest("request must be made within a project context (/projects/{projectID}/control-plane/...) or use --as-extra=project={orgID} for testing")
