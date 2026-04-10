@@ -148,8 +148,8 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			}
 
 			storage := map[string]rest.Storage{
-				"sessions":           &registrysessions.REST{Z: zc},
-				"useridentities":     &registryuseridentities.REST{Z: zc},
+				"sessions":       &registrysessions.REST{Z: zc},
+				"useridentities": &registryuseridentities.REST{Z: zc},
 				"machineaccountkeys": &registrymachineaccountkeys.REST{
 					Z:                           zc,
 					EnableImpersonationFallback: enableImpersonationFallback,
