@@ -85,10 +85,10 @@ func (r *REST) GetSingularName() string { return "machineaccountkey" }
 // The machine account user ID is looked up from Zitadel using the machine account name.
 //
 // Returns the MachineAccountKey with:
-// - status.authProviderKeyID: the key ID from Zitadel
-// - status.privateKey: a Datum credentials file (JSON) when Zitadel generated
-//   the key material. Empty when the caller supplied their own public key, in
-//   which case the caller already holds the private key.
+//   - status.authProviderKeyID: the key ID from Zitadel
+//   - status.privateKey: a Datum credentials file (JSON) when Zitadel generated
+//     the key material. Empty when the caller supplied their own public key, in
+//     which case the caller already holds the private key.
 func (r *REST) Create(
 	ctx context.Context,
 	obj runtime.Object,
