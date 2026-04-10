@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"time"
@@ -84,8 +85,10 @@ func (r *REST) GetSingularName() string { return "machineaccountkey" }
 // The machine account user ID is looked up from Zitadel using the machine account name.
 //
 // Returns the MachineAccountKey with:
-// - status.authProviderKeyID: the key ID from Zitadel
-// - status.privateKey: the generated or provided key content/payload from Zitadel
+//   - status.authProviderKeyID: the key ID from Zitadel
+//   - status.privateKey: a Datum credentials file (JSON) when Zitadel generated
+//     the key material. Empty when the caller supplied their own public key, in
+//     which case the caller already holds the private key.
 func (r *REST) Create(
 	ctx context.Context,
 	obj runtime.Object,
@@ -161,9 +164,19 @@ func (r *REST) Create(
 		return nil, translateErr(err, mak.Name)
 	}
 
-	// Populate the status with the returned key ID and key content
+	// Populate status. When Zitadel generated the key material, transform its
+	// native envelope into the Datum credentials file format expected by
+	// datumctl and other Datum tooling. When the caller supplied their own
+	// public key, Zitadel returns no key content and status.privateKey is
+	// left empty.
+	credsJSON, err := buildDatumCredentials(keyContent, keyID, userID, mak.Spec.MachineAccountUserName)
+	if err != nil {
+		klog.ErrorS(err, "Failed to build Datum credentials response", "orgID", orgID, "userID", userID, "keyID", keyID)
+		return nil, apierrors.NewInternalError(fmt.Errorf("failed to build credentials response"))
+	}
+
 	mak.Status.AuthProviderKeyID = keyID
-	mak.Status.PrivateKey = string(keyContent)
+	mak.Status.PrivateKey = string(credsJSON)
 
 	klog.V(2).Infof("Machine account key created successfully: keyID=%s, machineAccount=%s, org=%s", keyID, mak.Spec.MachineAccountUserName, orgID)
 
@@ -205,6 +218,52 @@ func addMachineKeysToList(list *milov1alpha1.MachineAccountKeyList, machineAccou
 		}
 		list.Items = append(list.Items, item)
 	}
+}
+
+// datumCredentialsType is the `type` discriminator written to the credentials
+// file so tooling can recognize a Datum machine account credentials blob.
+const datumCredentialsType = "datum_machine_account"
+
+// datumCredentials is the credentials file format written to
+// MachineAccountKey.status.privateKey. It matches the shape expected by
+// datumctl's `auth login --credentials` flow.
+type datumCredentials struct {
+	Type         string `json:"type"`
+	ClientID     string `json:"client_id"`
+	PrivateKeyID string `json:"private_key_id"`
+	PrivateKey   string `json:"private_key"`
+	ClientEmail  string `json:"client_email,omitempty"`
+}
+
+// zitadelKeyEnvelope is the JSON envelope Zitadel returns as keyContent when
+// it generates the private key material. Only the PEM `key` field is
+// extracted here — the other values (keyId, userId) are already available
+// to the REST handler as separate parameters and do not need re-parsing.
+type zitadelKeyEnvelope struct {
+	Key string `json:"key"`
+}
+
+// buildDatumCredentials transforms Zitadel's AddKey keyContent payload into
+// the Datum credentials file format. When keyContent is empty (the caller
+// supplied their own public key and Zitadel therefore did not generate a
+// private key), it returns nil so status.privateKey stays empty.
+func buildDatumCredentials(keyContent []byte, keyID, clientID, clientEmail string) ([]byte, error) {
+	if len(keyContent) == 0 {
+		return nil, nil
+	}
+
+	var env zitadelKeyEnvelope
+	if err := json.Unmarshal(keyContent, &env); err != nil {
+		return nil, fmt.Errorf("parse zitadel key envelope: %w", err)
+	}
+
+	return json.Marshal(datumCredentials{
+		Type:         datumCredentialsType,
+		ClientID:     clientID,
+		PrivateKeyID: keyID,
+		PrivateKey:   env.Key,
+		ClientEmail:  clientEmail,
+	})
 }
 
 // validatePublicKey validates that the public key is in valid PEM format
