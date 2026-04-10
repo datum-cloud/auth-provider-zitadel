@@ -54,6 +54,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 		zitadelAPI                       string
 		zitadelKeyPath                   string
 		zitadelDefaultMachineKeyExpirary time.Duration
+		zitadelIntrospectionProjectID    string
 		// Local testing override
 		enableImpersonationFallback bool
 	)
@@ -149,7 +150,11 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			storage := map[string]rest.Storage{
 				"sessions":           &registrysessions.REST{Z: zc},
 				"useridentities":     &registryuseridentities.REST{Z: zc},
-				"machineaccountkeys": &registrymachineaccountkeys.REST{Z: zc, EnableImpersonationFallback: enableImpersonationFallback},
+				"machineaccountkeys": &registrymachineaccountkeys.REST{
+					Z:                           zc,
+					EnableImpersonationFallback: enableImpersonationFallback,
+					IntrospectionProjectID:      zitadelIntrospectionProjectID,
+				},
 			}
 
 			agi := genericserver.NewDefaultAPIGroupInfo(identityv1alpha1.SchemeGroupVersion.Group, scheme, metav1.ParameterCodec, codecs)
@@ -177,6 +182,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 	cmd.Flags().StringVar(&zitadelAPI, "zitadel-api", "", "Zitadel API base URL")
 	cmd.Flags().StringVar(&zitadelKeyPath, "zitadel-key", "", "Path to Zitadel machine account key")
 	cmd.Flags().DurationVar(&zitadelDefaultMachineKeyExpirary, "zitadel-default-machine-key-expiration", 10*365*24*time.Hour, "The default duration for machine account keys (defaults to 10 years)")
+	cmd.Flags().StringVar(&zitadelIntrospectionProjectID, "zitadel-introspection-project-id", "", "Numeric Zitadel project ID (e.g. 326089123456789012) that the authn webhook's introspection client is a member of. When set, generated machine account credentials include an audience scope for this project so their tokens can be introspected. Leave empty to preserve prior behavior.")
 	cmd.Flags().BoolVar(&enableImpersonationFallback, "enable-impersonation-fallback", false, "Enable looking up project ID from k8s impersonation extras (for local testing without Milo proxy)")
 
 	// Wire klog flags to this command so users can set verbosity with -v=N

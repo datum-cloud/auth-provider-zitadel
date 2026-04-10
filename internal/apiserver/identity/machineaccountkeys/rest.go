@@ -28,6 +28,12 @@ import (
 type REST struct {
 	Z                           zitadel.API
 	EnableImpersonationFallback bool
+	// IntrospectionProjectID is the Zitadel project ID the authn webhook's
+	// introspection client is a member of. When set, generated machine
+	// account credentials include an audience scope for this project so
+	// their tokens can be introspected. When empty, no scope field is
+	// emitted (caller-supplied keys or older deployments).
+	IntrospectionProjectID string
 }
 
 // getOrgID resolves the Zitadel organization ID from the request context.
@@ -169,7 +175,7 @@ func (r *REST) Create(
 	// datumctl and other Datum tooling. When the caller supplied their own
 	// public key, Zitadel returns no key content and status.privateKey is
 	// left empty.
-	credsJSON, err := buildDatumCredentials(keyContent, keyID, userID, mak.Spec.MachineAccountUserName)
+	credsJSON, err := buildDatumCredentials(keyContent, keyID, userID, mak.Spec.MachineAccountUserName, r.IntrospectionProjectID)
 	if err != nil {
 		klog.ErrorS(err, "Failed to build Datum credentials response", "orgID", orgID, "userID", userID, "keyID", keyID)
 		return nil, apierrors.NewInternalError(fmt.Errorf("failed to build credentials response"))
@@ -224,6 +230,11 @@ func addMachineKeysToList(list *milov1alpha1.MachineAccountKeyList, machineAccou
 // file so tooling can recognize a Datum machine account credentials blob.
 const datumCredentialsType = "datum_machine_account"
 
+// defaultMachineAccountScopes are the OIDC scopes always included in the
+// generated credentials file. The audience URN for the introspection
+// project is appended by buildDatumCredentials when configured.
+const defaultMachineAccountScopes = "openid profile email offline_access"
+
 // datumCredentials is the credentials file format written to
 // MachineAccountKey.status.privateKey. It matches the shape expected by
 // datumctl's `auth login --credentials` flow.
@@ -233,6 +244,7 @@ type datumCredentials struct {
 	PrivateKeyID string `json:"private_key_id"`
 	PrivateKey   string `json:"private_key"`
 	ClientEmail  string `json:"client_email,omitempty"`
+	Scope        string `json:"scope,omitempty"`
 }
 
 // zitadelKeyEnvelope is the JSON envelope Zitadel returns as keyContent when
@@ -247,7 +259,13 @@ type zitadelKeyEnvelope struct {
 // the Datum credentials file format. When keyContent is empty (the caller
 // supplied their own public key and Zitadel therefore did not generate a
 // private key), it returns nil so status.privateKey stays empty.
-func buildDatumCredentials(keyContent []byte, keyID, clientID, clientEmail string) ([]byte, error) {
+//
+// When introspectionProjectID is non-empty, the returned credentials include
+// a `scope` field containing the default OIDC scopes plus an audience URN
+// for the given Zitadel project, so tokens minted with these credentials can
+// be introspected by the authn webhook. When empty, the `scope` field is
+// omitted to preserve prior behavior.
+func buildDatumCredentials(keyContent []byte, keyID, clientID, clientEmail, introspectionProjectID string) ([]byte, error) {
 	if len(keyContent) == 0 {
 		return nil, nil
 	}
@@ -257,13 +275,18 @@ func buildDatumCredentials(keyContent []byte, keyID, clientID, clientEmail strin
 		return nil, fmt.Errorf("parse zitadel key envelope: %w", err)
 	}
 
-	return json.Marshal(datumCredentials{
+	creds := datumCredentials{
 		Type:         datumCredentialsType,
 		ClientID:     clientID,
 		PrivateKeyID: keyID,
 		PrivateKey:   env.Key,
 		ClientEmail:  clientEmail,
-	})
+	}
+	if introspectionProjectID != "" {
+		creds.Scope = defaultMachineAccountScopes + " urn:zitadel:iam:org:project:id:" + introspectionProjectID + ":aud"
+	}
+
+	return json.Marshal(creds)
 }
 
 // validatePublicKey validates that the public key is in valid PEM format
