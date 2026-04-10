@@ -12,6 +12,14 @@ func OrgIDForProject(projectName string) string {
 	return "project-" + projectName
 }
 
+// OrgDisplayNameForProject returns the display name used when creating a
+// Zitadel organization for a project. The "Project - " prefix keeps the
+// display name unique from the bare project name that Zitadel already
+// reserves as a domain label on the old (un-prefixed) organization.
+func OrgDisplayNameForProject(projectName string) string {
+	return "Project - " + projectName
+}
+
 // Session represents a Zitadel session distilled for Kubernetes exposure.
 type Session struct {
 	ID            string

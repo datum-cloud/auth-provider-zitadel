@@ -155,12 +155,13 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 	}
 
 	if org == nil {
-		log.Info("Zitadel Organization does not exist, creating it", "orgID", orgID, "displayName", projectName)
-		if _, err := r.Zitadel.CreateOrganizationWithID(ctx, projectName, orgID); err != nil {
+		displayName := pkgzitadel.OrgDisplayNameForProject(projectName)
+		log.Info("Zitadel Organization does not exist, creating it", "orgID", orgID, "displayName", displayName)
+		if _, err := r.Zitadel.CreateOrganizationWithID(ctx, displayName, orgID); err != nil {
 			log.Error(err, "Failed to create Zitadel Organization", "orgID", orgID)
 			return ctrl.Result{}, fmt.Errorf("create organization: %w", err)
 		}
-		log.Info("Successfully created Zitadel Organization", "orgID", orgID, "displayName", projectName)
+		log.Info("Successfully created Zitadel Organization", "orgID", orgID, "displayName", displayName)
 	}
 
 	maComputedEmail := r.computeEmailAddress(machineAccount, req)
