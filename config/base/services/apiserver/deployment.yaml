@@ -42,6 +42,9 @@ spec:
             - -v=4
             - --enable-impersonation-fallback=$(ENABLE_IMPERSONATION_FALLBACK)
             - --etcd-servers=$(ETCD_SERVERS)
+            - --etcd-certfile=$(ETCD_CERTFILE)
+            - --etcd-keyfile=$(ETCD_KEYFILE)
+            - --etcd-cafile=$(ETCD_CAFILE)
           env:
             - name: LOG_LEVEL
               value: "info"
@@ -76,6 +79,12 @@ spec:
             # REQUIRED: set to the etcd endpoint(s) for MachineAccount storage,
             # e.g. "https://etcd:2379". The server will refuse to start if empty.
             - name: ETCD_SERVERS
+              value: ""
+            - name: ETCD_CERTFILE
+              value: ""
+            - name: ETCD_KEYFILE
+              value: ""
+            - name: ETCD_CAFILE
               value: ""
           ports:
             - name: https
