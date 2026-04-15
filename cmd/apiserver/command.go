@@ -23,6 +23,7 @@ import (
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 
 	registrymachineaccountkeys "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/machineaccountkeys"
+	registrymachineaccounts "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/machineaccounts"
 	registrysessions "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/sessions"
 	registryuseridentities "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/useridentities"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
@@ -59,6 +60,11 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 		enableImpersonationFallback bool
 	)
 
+	// etcdOpts holds the etcd connection settings for the MachineAccount etcd-backed
+	// storage.  It is pre-configured with defaults by NewRecommendedOptions and its
+	// flags are registered below so callers can pass --etcd-servers etc.
+	etcdOpts := genericoptions.NewRecommendedOptions("/registry/identity.miloapis.com", nil).Etcd
+
 	cmd := &cobra.Command{
 		Use:   "apiserver",
 		Short: "Run API server for Zitadel sessions",
@@ -78,7 +84,9 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 
 			codecs := serializer.NewCodecFactory(scheme)
 
-			ro := genericoptions.NewRecommendedOptions("/unused/registry", nil)
+			ro := genericoptions.NewRecommendedOptions("/registry/identity.miloapis.com", nil)
+			// Replace the default etcd options with the flag-populated one.
+			ro.Etcd = etcdOpts
 			// Ensure we don't try to bind to privileged port 443; default to 8443 and allow override via flag
 			ro.SecureServing.BindPort = securePort
 			if tlsCertFile != "" && tlsKeyFile != "" {
@@ -98,7 +106,6 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			ro.Authentication = authn
 			// Use an allow-all authorizer so Milo acts as PDP
 			ro.Authorization = nil
-			ro.Etcd = nil
 			ro.Admission = nil
 			ro.CoreAPI = nil
 			ro.Audit = nil
@@ -147,9 +154,19 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 				return fmt.Errorf("init zitadel sdk: %w", err)
 			}
 
+			// Build etcd-backed MachineAccount storage.  The RESTOptionsGetter is
+			// populated by ro.Etcd.ApplyTo (called inside ro.ApplyTo above) and
+			// carries the etcd prefix, storage media type, and connection config.
+			maStorage, err := registrymachineaccounts.NewStorage(scheme, cfg.RESTOptionsGetter)
+			if err != nil {
+				return fmt.Errorf("build machineaccounts storage: %w", err)
+			}
+
 			storage := map[string]rest.Storage{
-				"sessions":       &registrysessions.REST{Z: zc},
-				"useridentities": &registryuseridentities.REST{Z: zc},
+				"sessions":               &registrysessions.REST{Z: zc},
+				"useridentities":         &registryuseridentities.REST{Z: zc},
+				"machineaccounts":        maStorage.MachineAccount,
+				"machineaccounts/status": maStorage.Status,
 				"machineaccountkeys": &registrymachineaccountkeys.REST{
 					Z:                           zc,
 					EnableImpersonationFallback: enableImpersonationFallback,
@@ -184,6 +201,13 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 	cmd.Flags().DurationVar(&zitadelDefaultMachineKeyExpirary, "zitadel-default-machine-key-expiration", 10*365*24*time.Hour, "The default duration for machine account keys (defaults to 10 years)")
 	cmd.Flags().StringVar(&zitadelIntrospectionProjectID, "zitadel-introspection-project-id", "", "Numeric Zitadel project ID (e.g. 326089123456789012) that the authn webhook's introspection client is a member of. When set, generated machine account credentials include an audience scope for this project so their tokens can be introspected. Leave empty to preserve prior behavior.")
 	cmd.Flags().BoolVar(&enableImpersonationFallback, "enable-impersonation-fallback", false, "Enable looking up project ID from k8s impersonation extras (for local testing without Milo proxy)")
+
+	// Etcd flags for the MachineAccount etcd-backed storage.
+	// RecommendedOptions.Etcd is pre-configured with defaults; AddFlags wires
+	// --etcd-servers, --etcd-certfile, --etcd-keyfile, --storage-backend, etc.
+	// through to the command.  These are required when serving
+	// identity.miloapis.com/machineaccounts via the aggregated API server.
+	etcdOpts.AddFlags(cmd.Flags())
 
 	// Wire klog flags to this command so users can set verbosity with -v=N
 	goFS := flag.NewFlagSet("klog", flag.ContinueOnError)
