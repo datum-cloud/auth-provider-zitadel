@@ -111,6 +111,11 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			ro.Audit = nil
 			ro.Features.EnablePriorityAndFairness = false
 
+			// Fail fast if etcd is not configured — MachineAccount storage requires it.
+			if len(etcdOpts.StorageConfig.Transport.ServerList) == 0 {
+				return fmt.Errorf("--etcd-servers is required: MachineAccount storage is backed by etcd")
+			}
+
 			cfg := genericserver.NewRecommendedConfig(codecs)
 			if err := ro.ApplyTo(cfg); err != nil {
 				return fmt.Errorf("apply recommended options: %w", err)

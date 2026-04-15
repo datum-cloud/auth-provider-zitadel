@@ -102,6 +102,9 @@ type StatusREST struct {
 
 var _ rest.Patcher = &StatusREST{}
 
+// NamespaceScoped returns false — MachineAccount is cluster-scoped.
+func (r *StatusREST) NamespaceScoped() bool { return false }
+
 // New creates a new MachineAccount object.
 func (r *StatusREST) New() runtime.Object {
 	return &identityv1alpha1.MachineAccount{}

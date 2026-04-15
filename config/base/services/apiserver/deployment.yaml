@@ -73,6 +73,8 @@ spec:
               value: "X-Remote-Uid"
             - name: ENABLE_IMPERSONATION_FALLBACK
               value: "false"
+            # REQUIRED: set to the etcd endpoint(s) for MachineAccount storage,
+            # e.g. "https://etcd:2379". The server will refuse to start if empty.
             - name: ETCD_SERVERS
               value: ""
           ports:

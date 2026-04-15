@@ -176,7 +176,7 @@ platform.
   - Creates machine users in Zitadel when `MachineAccount` is created
   - Updates machine user state (Active/Inactive) based on `spec.state`
   - Deletes machine users when `MachineAccount` is deleted
-- **Identity Format**: `{uid}@{namespace}.{project}.iam.miloapis.com`
+- **Identity Format**: `{name}@{project-name}.{email-address-suffix}`
 
 #### UserDeactivationController (Platform Level)
 
