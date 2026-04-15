@@ -5,7 +5,7 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - iam.miloapis.com
+  - identity.miloapis.com
   resources:
   - machineaccounts
   verbs:
@@ -17,21 +17,26 @@ rules:
   - update
   - watch
 - apiGroups:
-  - iam.miloapis.com
+  - identity.miloapis.com
   resources:
   - machineaccounts/finalizers
-  - userdeactivations/finalizers
-  - userdeactivations/status
-  - users/finalizers
   verbs:
   - update
 - apiGroups:
-  - iam.miloapis.com
+  - identity.miloapis.com
   resources:
   - machineaccounts/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - iam.miloapis.com
+  resources:
+  - userdeactivations/finalizers
+  - userdeactivations/status
+  - users/finalizers
+  verbs:
   - update
 - apiGroups:
   - iam.miloapis.com

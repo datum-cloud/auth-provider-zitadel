@@ -22,7 +22,7 @@ spec:
       - assert:
           # Expect the "active" account to be in Active state.
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: active-machineaccount
@@ -32,7 +32,7 @@ spec:
       - assert:
           # Expect the "inactive" account to be in Inactive state.
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: inactive-machineaccount
@@ -44,7 +44,7 @@ spec:
       - patch:
           # Set the previously Active account to Inactive.
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: active-machineaccount
@@ -53,7 +53,7 @@ spec:
       - patch:
           # Set the previously Inactive account to Active.
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: inactive-machineaccount
@@ -63,7 +63,7 @@ spec:
       # --- Step 4 : Verify reconciled state -----------------------------------------
       - assert:
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: active-machineaccount
@@ -72,7 +72,7 @@ spec:
               email: active-machineaccount@single.identity.miloapis.com
       - assert:
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: inactive-machineaccount
@@ -110,7 +110,7 @@ spec:
       # --- Step 5 : Revert to original states -----------------------------------
       - patch:
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: active-machineaccount
@@ -118,7 +118,7 @@ spec:
               state: Active
       - patch:
           resource:
-            apiVersion: iam.miloapis.com/v1alpha1
+            apiVersion: identity.miloapis.com/v1alpha1
             kind: MachineAccount
             metadata:
               name: inactive-machineaccount

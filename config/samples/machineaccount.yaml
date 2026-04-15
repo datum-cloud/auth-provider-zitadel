@@ -1,4 +1,4 @@
-apiVersion: iam.miloapis.com/v1alpha1
+apiVersion: identity.miloapis.com/v1alpha1
 kind: MachineAccount
 metadata:
   name: example-service-account

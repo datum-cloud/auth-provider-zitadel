@@ -16,7 +16,7 @@ spec:
         file: resources/machineaccount.yaml
     - assert:
         resource:
-          apiVersion: iam.miloapis.com/v1alpha1
+          apiVersion: identity.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
             name: ma-keys

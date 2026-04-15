@@ -17,7 +17,7 @@ spec:
         file: resources/machineaccount.yaml
     - assert:
         resource:
-          apiVersion: iam.miloapis.com/v1alpha1
+          apiVersion: identity.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
             name: ma-lifecycle
@@ -99,7 +99,7 @@ spec:
     try:
     - patch:
         resource:
-          apiVersion: iam.miloapis.com/v1alpha1
+          apiVersion: identity.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
             name: ma-lifecycle
@@ -107,7 +107,7 @@ spec:
             state: Inactive
     - assert:
         resource:
-          apiVersion: iam.miloapis.com/v1alpha1
+          apiVersion: identity.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
             name: ma-lifecycle
@@ -145,7 +145,7 @@ spec:
     try:
     - patch:
         resource:
-          apiVersion: iam.miloapis.com/v1alpha1
+          apiVersion: identity.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
             name: ma-lifecycle
@@ -153,7 +153,7 @@ spec:
             state: Active
     - assert:
         resource:
-          apiVersion: iam.miloapis.com/v1alpha1
+          apiVersion: identity.miloapis.com/v1alpha1
           kind: MachineAccount
           metadata:
             name: ma-lifecycle

@@ -41,6 +41,7 @@ spec:
             - --zitadel-introspection-project-id=$(ZITADEL_INTROSPECTION_PROJECT_ID)
             - -v=4
             - --enable-impersonation-fallback=$(ENABLE_IMPERSONATION_FALLBACK)
+            - --etcd-servers=$(ETCD_SERVERS)
           env:
             - name: LOG_LEVEL
               value: "info"
@@ -72,6 +73,8 @@ spec:
               value: "X-Remote-Uid"
             - name: ENABLE_IMPERSONATION_FALLBACK
               value: "false"
+            - name: ETCD_SERVERS
+              value: ""
           ports:
             - name: https
               containerPort: 8443
