@@ -54,7 +54,7 @@ func NewStorage(scheme *runtime.Scheme, optsGetter generic.RESTOptionsGetter) (*
 		UpdateStrategy: strategy,
 		DeleteStrategy: strategy,
 
-		TableConvertor: newMachineAccountTableConvertor(gr),
+		TableConvertor: rest.NewDefaultTableConvertor(gr),
 	}
 
 	options := &generic.StoreOptions{
@@ -147,12 +147,6 @@ func MatchMachineAccount(label labels.Selector, field fields.Selector) storage.S
 		Field:    field,
 		GetAttrs: GetAttrs,
 	}
-}
-
-// newMachineAccountTableConvertor returns a table convertor that renders the
-// columns shown by `kubectl get machineaccounts`.
-func newMachineAccountTableConvertor(gr interface{}) rest.TableConvertor {
-	return rest.NewDefaultTableConvertor(identityv1alpha1.Resource("machineaccounts"))
 }
 
 // machineAccountToTable converts MachineAccount objects to a kubectl Table.
