@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	iammiloapiscomv1alpha1 "go.miloapis.com/milo/pkg/apis/iam/v1alpha1"
+	identityv1alpha1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	machineAccountFinalizerKey  = "iam.miloapis.com/machineaccount"
+	machineAccountFinalizerKey  = "identity.miloapis.com/machineaccount"
 	inactiveMachineAccountState = "Inactive"
 	activeMachineAccountState   = "Active"
 )
@@ -60,7 +60,7 @@ func (f *machineAccountFinalizer) Finalize(ctx context.Context, obj client.Objec
 	log.Info("Starting finalization")
 
 	// Type assertion to get the machine account object.
-	machineAccount, ok := obj.(*iammiloapiscomv1alpha1.MachineAccount)
+	machineAccount, ok := obj.(*identityv1alpha1.MachineAccount)
 	if !ok {
 		err := fmt.Errorf("unexpected object type %T, expected MachineAccount", obj)
 		log.Error(err, "Type assertion failed")
@@ -92,9 +92,9 @@ func (f *machineAccountFinalizer) Finalize(ctx context.Context, obj client.Objec
 	return finalizer.Result{}, nil
 }
 
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=machineaccounts,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=machineaccounts/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=iam.miloapis.com,resources=machineaccounts/finalizers,verbs=update
+// +kubebuilder:rbac:groups=identity.miloapis.com,resources=machineaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=identity.miloapis.com,resources=machineaccounts/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=identity.miloapis.com,resources=machineaccounts/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -114,7 +114,7 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %s from manager: %w", req.ClusterName, err)
 	}
 
-	machineAccount := &iammiloapiscomv1alpha1.MachineAccount{}
+	machineAccount := &identityv1alpha1.MachineAccount{}
 	err = cluster.GetClient().Get(ctx, req.NamespacedName, machineAccount)
 	if errors.IsNotFound(err) {
 		log.Info("MachineAccount resource not found")
@@ -219,7 +219,7 @@ func (r *MachineAccountController) Reconcile(ctx context.Context, req mcreconcil
 }
 
 // updateMachineAccountState updates the state of a machine account in Zitadel
-func (r *MachineAccountController) updateMachineAccountState(ctx context.Context, orgID string, machineAccount *iammiloapiscomv1alpha1.MachineAccount) error {
+func (r *MachineAccountController) updateMachineAccountState(ctx context.Context, orgID string, machineAccount *identityv1alpha1.MachineAccount) error {
 	log := logf.FromContext(ctx).WithName("machineaccount-reconciler")
 
 	userID := string(machineAccount.GetUID())
@@ -270,14 +270,14 @@ func (r *MachineAccountController) SetupWithManager(mgr mcmanager.Manager) error
 	}
 
 	return mcbuilder.ControllerManagedBy(mgr).
-		For(&iammiloapiscomv1alpha1.MachineAccount{}).
+		For(&identityv1alpha1.MachineAccount{}).
 		Named("machineaccount").
 		Complete(r)
 }
 
 // computeEmailAddress computes the email address for a machine account
 // EmailAddress is {metadata.name}@{project-name}.{EmailAddressSuffix}
-func (r *MachineAccountController) computeEmailAddress(machineAccount *iammiloapiscomv1alpha1.MachineAccount, req mcreconcile.Request) string {
+func (r *MachineAccountController) computeEmailAddress(machineAccount *identityv1alpha1.MachineAccount, req mcreconcile.Request) string {
 	projectName := strings.TrimPrefix(req.ClusterName, "/")
 	return machineAccount.GetName() + "@" + projectName + "." + r.EmailAddressSuffix
 }
