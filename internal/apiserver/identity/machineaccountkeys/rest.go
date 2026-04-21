@@ -111,8 +111,8 @@ func (r *REST) Create(
 
 	// Validate required fields
 	if mak.Spec.MachineAccountUserName == "" {
-		klog.ErrorS(nil, "Missing required field: machineAccountName")
-		return nil, apierrors.NewBadRequest("machineAccountName is required")
+		klog.ErrorS(nil, "Missing required field: machineAccountUserName")
+		return nil, apierrors.NewBadRequest("machineAccountUserName is required")
 	}
 
 	// Extract organization ID from request context (set by ProjectRouter or Impersonation)
