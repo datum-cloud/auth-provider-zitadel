@@ -7,12 +7,14 @@ import (
 	milov1alpha1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
 )
 
-// Install registers provider group/version bindings for Milo Session types.
+// Install registers provider group/version bindings for Milo identity types and
+// declares which field selectors the aggregated apiserver should pass through to
+// the REST handlers (otherwise the generic apiserver rejects them at request
+// validation with "is not a known field selector: only metadata.name,
+// metadata.namespace").
 func Install(s *runtime.Scheme) {
 	_ = milov1alpha1.AddToScheme(s)
 
-	// Register valid field selectors for MachineAccountKey so the generic API server
-	// passes them through to the REST handler instead of intercepting them.
 	_ = s.AddFieldLabelConversionFunc(
 		schema.GroupVersionKind{
 			Group:   milov1alpha1.SchemeGroupVersion.Group,
@@ -27,5 +29,36 @@ func Install(s *runtime.Scheme) {
 				return "", "", nil
 			}
 		},
+	)
+
+	// Sessions and UserIdentities are listed by callers using
+	// status.userUID=<uid> for cross-user lookups (gated by SAR in the REST
+	// handler). Without this registration the apiserver pre-rejects the
+	// selector before the handler ever sees it.
+	sessionUserIDConversion := func(label, value string) (string, string, error) {
+		switch label {
+		case "status.userUID", "metadata.name", "metadata.namespace":
+			return label, value, nil
+		default:
+			return "", "", nil
+		}
+	}
+
+	_ = s.AddFieldLabelConversionFunc(
+		schema.GroupVersionKind{
+			Group:   milov1alpha1.SchemeGroupVersion.Group,
+			Version: milov1alpha1.SchemeGroupVersion.Version,
+			Kind:    "Session",
+		},
+		sessionUserIDConversion,
+	)
+
+	_ = s.AddFieldLabelConversionFunc(
+		schema.GroupVersionKind{
+			Group:   milov1alpha1.SchemeGroupVersion.Group,
+			Version: milov1alpha1.SchemeGroupVersion.Version,
+			Kind:    "UserIdentity",
+		},
+		sessionUserIDConversion,
 	)
 }
