@@ -70,7 +70,8 @@ func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.O
 				IP:            s.IP,
 				FingerprintID: s.FingerprintID,
 				CreatedAt:     metav1.NewTime(s.CreatedAt),
-				ExpiresAt:     toPtrTime(s.ExpiresAt),
+				LastUpdatedAt: timeToMeta(s.LastUpdated),
+				UserAgent:     s.UserAgent,
 			},
 		})
 	}
@@ -105,7 +106,8 @@ func (r *REST) Get(ctx context.Context, name string, _ *metav1.GetOptions) (runt
 			IP:            s.IP,
 			FingerprintID: s.FingerprintID,
 			CreatedAt:     metav1.NewTime(s.CreatedAt),
-			ExpiresAt:     toPtrTime(s.ExpiresAt),
+			LastUpdatedAt: timeToMeta(s.LastUpdated),
+			UserAgent:     s.UserAgent,
 		},
 	}, nil
 }
@@ -143,7 +145,7 @@ func translateErr(err error, name string) error {
 	return err
 }
 
-func toPtrTime(t *time.Time) *metav1.Time {
+func timeToMeta(t *time.Time) *metav1.Time {
 	if t == nil {
 		return nil
 	}

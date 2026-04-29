@@ -27,7 +27,8 @@ type Session struct {
 	IP            string
 	FingerprintID string
 	CreatedAt     time.Time
-	ExpiresAt     *time.Time
+	LastUpdated   *time.Time
+	UserAgent     string
 }
 
 // IDPLink represents an identity provider link for a user.
