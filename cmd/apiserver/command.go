@@ -16,7 +16,10 @@ import (
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericserver "k8s.io/apiserver/pkg/server"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	authzv1client "k8s.io/client-go/kubernetes/typed/authorization/v1"
+	"k8s.io/client-go/tools/clientcmd"
 	compatibility "k8s.io/component-base/compatibility"
 	"k8s.io/klog/v2"
 	openapicommon "k8s.io/kube-openapi/pkg/common"
@@ -147,9 +150,34 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 				return fmt.Errorf("init zitadel sdk: %w", err)
 			}
 
+			// Optional: build a SubjectAccessReviews client against milo
+			// for cross-user identity/session lookups. Loaded via the
+			// standard kube client config (KUBECONFIG env / --kubeconfig
+			// flag / in-cluster fallback) — same pattern the sibling
+			// authn-webhook Deployment uses (it sets KUBECONFIG to the
+			// milo kubeconfig path on the pod). If the loader can't find
+			// a valid config, we leave miloSAR nil and the REST handlers
+			// reject cross-user lookups with a clear error; self-only
+			// lookups still work.
+			var miloSAR authzv1client.SubjectAccessReviewInterface
+			restCfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+				clientcmd.NewDefaultClientConfigLoadingRules(),
+				&clientcmd.ConfigOverrides{},
+			).ClientConfig()
+			if err != nil {
+				log.Info("No kube client config found for milo SAR; cross-user identity/session lookups disabled", "reason", err.Error())
+			} else {
+				clientset, err := kubernetes.NewForConfig(restCfg)
+				if err != nil {
+					return fmt.Errorf("build milo clientset from kube client config: %w", err)
+				}
+				miloSAR = clientset.AuthorizationV1().SubjectAccessReviews()
+				log.Info("Cross-user identity/session lookups enabled via milo SAR", "host", restCfg.Host)
+			}
+
 			storage := map[string]rest.Storage{
-				"sessions":       &registrysessions.REST{Z: zc},
-				"useridentities": &registryuseridentities.REST{Z: zc},
+				"sessions":       &registrysessions.REST{Z: zc, MiloSAR: miloSAR},
+				"useridentities": &registryuseridentities.REST{Z: zc, MiloSAR: miloSAR},
 				"machineaccountkeys": &registrymachineaccountkeys.REST{
 					Z:                           zc,
 					EnableImpersonationFallback: enableImpersonationFallback,

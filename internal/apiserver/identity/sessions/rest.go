@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -18,11 +19,25 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/utils"
 	"go.miloapis.com/auth-provider-zitadel/pkg/zitadel"
 	milov1alpha1 "go.miloapis.com/milo/pkg/apis/identity/v1alpha1"
 )
 
-type REST struct{ Z zitadel.API }
+// REST serves identity.miloapis.com/v1alpha1.Session backed by Zitadel.
+//
+// MiloSAR, when set, is consulted on List requests that include a
+// `status.userUID=<uid>` field selector targeting a user other than the
+// caller. The handler asks milo via SubjectAccessReview whether the caller
+// can `get iam.miloapis.com/users/<uid>` and proceeds iff allowed.
+//
+// If MiloSAR is nil, cross-user lookups are rejected with a clear error;
+// self-only behavior is unaffected. This lets deployments roll the binary
+// without the milo kubeconfig wired up and degrade gracefully.
+type REST struct {
+	Z       zitadel.API
+	MiloSAR utils.SubjectAccessReviewer
+}
 
 var _ rest.Scoper = &REST{}
 var _ rest.Lister = &REST{}
@@ -39,14 +54,49 @@ func (r *REST) New() runtime.Object     { return &milov1alpha1.Session{} }
 func (r *REST) NewList() runtime.Object { return &milov1alpha1.SessionList{} }
 func (r *REST) GetSingularName() string { return "session" }
 
-func (r *REST) List(ctx context.Context, _ *metainternal.ListOptions) (runtime.Object, error) {
+func (r *REST) List(ctx context.Context, options *metainternal.ListOptions) (runtime.Object, error) {
 	u, ok := request.UserFrom(ctx)
 	if !ok {
 		klog.ErrorS(nil, "No user in context for List")
 		return nil, apierrors.NewUnauthorized("no user in context")
 	}
+
+	// Default: list the caller's own sessions. If the caller passes a
+	// status.userUID field selector targeting a different user UID, ask
+	// milo (via SAR) whether the caller can `get` that user; proceed iff
+	// allowed.
 	uid := u.GetUID()
-	klog.V(2).InfoS("Listing sessions for user", "uid", uid)
+	if options != nil && options.FieldSelector != nil {
+		if targetUID, err := utils.ExtractUserUIDFromFieldSelector(options.FieldSelector); err == nil && targetUID != "" && targetUID != u.GetUID() {
+			if r.MiloSAR == nil {
+				klog.V(2).InfoS("Cross-user session lookup rejected: no milo SAR client configured",
+					"requestor", u.GetUID(), "targetUID", targetUID)
+				return nil, apierrors.NewForbidden(
+					sessionsGR,
+					"",
+					fmt.Errorf("cross-user session lookup requires the apiserver to be configured with a milo kubeconfig"))
+			}
+			allowed, err := utils.CanGetUser(ctx, r.MiloSAR, u, targetUID)
+			if err != nil {
+				klog.ErrorS(err, "SubjectAccessReview against milo failed",
+					"requestor", u.GetUID(), "targetUID", targetUID)
+				return nil, apierrors.NewInternalError(err)
+			}
+			if !allowed {
+				klog.V(2).InfoS("Unauthorized: caller cannot get target user in milo",
+					"requestor", u.GetUID(), "targetUID", targetUID)
+				return nil, apierrors.NewForbidden(
+					sessionsGR,
+					"",
+					fmt.Errorf("not authorized to query sessions for user %q (requires get on iam.miloapis.com/users)", targetUID))
+			}
+			klog.V(2).InfoS("Cross-user session lookup authorized by milo",
+				"requestor", u.GetUID(), "targetUID", targetUID)
+			uid = targetUID
+		}
+	}
+	klog.V(2).InfoS("Listing sessions", "uid", uid)
+
 	zs, err := r.Z.ListSessions(ctx, uid)
 	if err != nil {
 		klog.ErrorS(err, "Failed to list sessions", "uid", uid)
