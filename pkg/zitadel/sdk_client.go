@@ -129,6 +129,33 @@ func NewSDK(ctx context.Context, cfg SDKConfig) (*SDKClient, error) {
 	}, nil
 }
 
+func (c *SDKClient) mapZitadelSession(s *sessionv2.Session) Session {
+	if s == nil {
+		return Session{}
+	}
+	zeUA := s.GetUserAgent()
+	ip := ""
+	fingerprint := ""
+	if zeUA != nil {
+		ip = zeUA.GetIp()
+		fingerprint = zeUA.GetFingerprintId()
+	}
+	var lastUpdated *time.Time
+	if cd := s.GetChangeDate(); cd != nil {
+		t := cd.AsTime()
+		lastUpdated = &t
+	}
+	return Session{
+		ID:            s.GetId(),
+		UserID:        s.GetFactors().GetUser().GetId(),
+		IP:            ip,
+		FingerprintID: fingerprint,
+		CreatedAt:     toTime(s.GetCreationDate()),
+		LastUpdated:   lastUpdated,
+		UserAgent:     extractUserAgentString(zeUA),
+	}
+}
+
 // ListSessions retrieves sessions for a given user using the v2 SessionService.
 func (c *SDKClient) ListSessions(ctx context.Context, userID string) ([]Session, error) {
 	klog.V(2).Infof("ListSessions: listing sessions for userID=%q", userID)
@@ -145,14 +172,7 @@ func (c *SDKClient) ListSessions(ctx context.Context, userID string) ([]Session,
 
 	out := make([]Session, 0, len(resp.GetSessions()))
 	for _, s := range resp.GetSessions() {
-		out = append(out, Session{
-			ID:            s.GetId(),
-			UserID:        s.GetFactors().GetUser().GetId(),
-			IP:            s.GetUserAgent().GetIp(),
-			FingerprintID: s.GetUserAgent().GetFingerprintId(),
-			CreatedAt:     toTime(s.GetCreationDate()),
-			ExpiresAt:     toTimePtr(s.GetExpirationDate()),
-		})
+		out = append(out, c.mapZitadelSession(s))
 	}
 	klog.V(2).Infof("ListSessions: found %d session(s) for userID=%q", len(out), userID)
 	return out, nil
@@ -168,16 +188,9 @@ func (c *SDKClient) GetSession(ctx context.Context, id string) (*Session, error)
 		return nil, err
 	}
 	s := r.GetSession()
-	res := &Session{
-		ID:            s.GetId(),
-		UserID:        s.GetFactors().GetUser().GetId(),
-		IP:            s.GetUserAgent().GetIp(),
-		FingerprintID: s.GetUserAgent().GetFingerprintId(),
-		CreatedAt:     toTime(s.GetCreationDate()),
-		ExpiresAt:     toTimePtr(s.GetExpirationDate()),
-	}
+	res := c.mapZitadelSession(s)
 	klog.V(3).Infof("GetSession: session id=%q fetched (user=%q)", res.ID, res.UserID)
-	return res, nil
+	return &res, nil
 }
 
 // DeleteSession removes a session by ID.
@@ -202,15 +215,6 @@ func toTime(ts *pb.Timestamp) time.Time {
 		return time.Time{}
 	}
 	return ts.AsTime()
-}
-
-// toTimePtr returns nil when ts is nil; otherwise a pointer to the conversion.
-func toTimePtr(ts *pb.Timestamp) *time.Time {
-	if ts == nil {
-		return nil
-	}
-	t := ts.AsTime()
-	return &t
 }
 
 // ListIDPLinks retrieves all identity provider links for a given user.
