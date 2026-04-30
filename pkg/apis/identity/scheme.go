@@ -19,11 +19,11 @@ func Install(s *runtime.Scheme) {
 		schema.GroupVersionKind{
 			Group:   milov1alpha1.SchemeGroupVersion.Group,
 			Version: milov1alpha1.SchemeGroupVersion.Version,
-			Kind:    "MachineAccountKey",
+			Kind:    "ServiceAccountKey",
 		},
 		func(label, value string) (string, string, error) {
 			switch label {
-			case "spec.machineAccountUserName", "metadata.name":
+			case "spec.serviceAccountUserName", "metadata.name":
 				return label, value, nil
 			default:
 				return "", "", nil
