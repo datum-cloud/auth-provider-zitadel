@@ -1,25 +1,25 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: machineaccountkey-generation
+  name: serviceaccountkey-generation
 spec:
-  # This test verifies that creating a MachineAccountKey without a publicKey 
-  # returns a valid generated privateKey in the status payload, which can be 
+  # This test verifies that creating a ServiceAccountKey without a publicKey
+  # returns a valid generated privateKey in the status payload, which can be
   # successfully used for token exchange.
   steps:
   - name: create-resources
     try:
     - apply:
-        file: resources/machineaccount.yaml
+        file: resources/serviceaccount.yaml
     - assert:
         resource:
           apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccount
+          kind: ServiceAccount
           metadata:
-            name: ma-generation
+            name: sa-generation
           status:
             state: Active
-            email: ma-generation@single.identity.miloapis.com
+            email: sa-generation@single.identity.miloapis.com
             conditions:
             - type: Ready
               status: "True"
@@ -27,15 +27,15 @@ spec:
         content: |
           set -e
           # Compute username
-          MA_UID=$(kubectl get machineaccount ma-generation -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="ma-generation@single.identity.miloapis.com"
-          echo "$MA_USERNAME" > /tmp/ma_username.txt
+          SA_UID=$(kubectl get serviceaccounts.iam.miloapis.com sa-generation -o jsonpath='{.metadata.uid}')
+          SA_USERNAME="sa-generation@single.identity.miloapis.com"
+          echo "$SA_USERNAME" > /tmp/sa_username.txt
 
           # Create Key without publicKey payload
           POST_RESPONSE=$(jq -n \
-            --arg machineAccountUserName "$MA_USERNAME" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"gen-key-ma-generation"},spec:{machineAccountUserName:$machineAccountUserName}}' | \
-            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
+            --arg serviceAccountUserName "$SA_USERNAME" \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"ServiceAccountKey",metadata:{name:"gen-key-sa-generation"},spec:{serviceAccountUserName:$serviceAccountUserName}}' | \
+            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/serviceaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
               -H "Impersonate-Group: system:masters" \
@@ -85,7 +85,7 @@ spec:
           jq '{type: "serviceaccount", keyId: .private_key_id, key: .private_key, userId: .client_id}' \
             /tmp/datum-credentials.json > /tmp/zitadel-key-gen.json
 
-          echo "Successfully created MachineAccountKey and captured the Datum credentials payload!"
+          echo "Successfully created ServiceAccountKey and captured the Datum credentials payload!"
 
   - name: verify-generated-key-works
     try:

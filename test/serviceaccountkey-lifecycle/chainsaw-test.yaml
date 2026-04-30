@@ -1,29 +1,29 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: machineaccount-deactivation
+  name: serviceaccount-deactivation
 spec:
-  # This test verifies that deactivating a MachineAccount prevents its keys from working.
-  # 1. Create a MachineAccount (Active) and a MachineAccountKey.
+  # This test verifies that deactivating a ServiceAccount prevents its keys from working.
+  # 1. Create a ServiceAccount (Active) and a ServiceAccountKey.
   # 2. Verify an access token can be obtained.
-  # 3. Deactivate the MachineAccount (state: Inactive).
+  # 3. Deactivate the ServiceAccount (state: Inactive).
   # 4. Verify getting an access token fails.
-  # 5. Re-activate the MachineAccount (state: Active).
+  # 5. Re-activate the ServiceAccount (state: Active).
   # 6. Verify getting an access token works again.
   steps:
   - name: create-resources
     try:
     - apply:
-        file: resources/machineaccount.yaml
+        file: resources/serviceaccount.yaml
     - assert:
         resource:
           apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccount
+          kind: ServiceAccount
           metadata:
-            name: ma-lifecycle
+            name: sa-lifecycle
           status:
             state: Active
-            email: ma-lifecycle@single.identity.miloapis.com
+            email: sa-lifecycle@single.identity.miloapis.com
             conditions:
             - type: Ready
               status: "True"
@@ -36,16 +36,16 @@ spec:
           openssl rsa -in /tmp/deact-priv.pem -pubout -out /tmp/deact-pub.pem 2>/dev/null
 
           # The Zitadel username is the computed email: {name}@single.identity.miloapis.com
-          MA_UID=$(kubectl get machineaccount ma-lifecycle -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="ma-lifecycle@single.identity.miloapis.com"
+          SA_UID=$(kubectl get serviceaccounts.iam.miloapis.com sa-lifecycle -o jsonpath='{.metadata.uid}')
+          SA_USERNAME="sa-lifecycle@single.identity.miloapis.com"
 
           # Create the key via identity.miloapis.com, providing our own public key
           PUB_KEY=$(cat /tmp/deact-pub.pem)
           POST_RESPONSE=$(jq -n \
-            --arg machineAccountUserName "$MA_USERNAME" \
+            --arg serviceAccountUserName "$SA_USERNAME" \
             --arg publicKey "$PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"deact-key-ma-lifecycle"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
-            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"ServiceAccountKey",metadata:{name:"deact-key-sa-lifecycle"},spec:{serviceAccountUserName:$serviceAccountUserName,publicKey:$publicKey}}' | \
+            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/serviceaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
               -H "Impersonate-Group: system:masters" \
@@ -65,7 +65,7 @@ spec:
           PRIV_KEY=$(cat /tmp/deact-priv.pem)
           jq -n \
             --arg keyId "$KEY_ID" \
-            --arg userId "$MA_UID" \
+            --arg userId "$SA_UID" \
             --arg key "$PRIV_KEY" \
             '{type:"serviceaccount",keyId:$keyId,key:$key,userId:$userId}' > /tmp/zitadel-key-deact.json
           echo "Saved zitadel key JSON"
@@ -95,22 +95,22 @@ spec:
           fi
           echo "Successfully obtained access token before deactivation!"
 
-  - name: deactivate-machine-account
+  - name: deactivate-service-account
     try:
     - patch:
         resource:
           apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccount
+          kind: ServiceAccount
           metadata:
-            name: ma-lifecycle
+            name: sa-lifecycle
           spec:
             state: Inactive
     - assert:
         resource:
           apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccount
+          kind: ServiceAccount
           metadata:
-            name: ma-lifecycle
+            name: sa-lifecycle
           status:
             state: Inactive
             conditions:
@@ -139,24 +139,24 @@ spec:
             echo "ERROR: Access token exchange did not fail as expected when deactivated! Response: $RESPONSE"
             exit 1
           fi
-          echo "Success: Token correctly failed when machine account was deactivated (Error: $ERROR)"
+          echo "Success: Token correctly failed when service account was deactivated (Error: $ERROR)"
 
-  - name: reactivate-machine-account
+  - name: reactivate-service-account
     try:
     - patch:
         resource:
           apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccount
+          kind: ServiceAccount
           metadata:
-            name: ma-lifecycle
+            name: sa-lifecycle
           spec:
             state: Active
     - assert:
         resource:
           apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccount
+          kind: ServiceAccount
           metadata:
-            name: ma-lifecycle
+            name: sa-lifecycle
           status:
             state: Active
             conditions:
@@ -186,4 +186,3 @@ spec:
             exit 1
           fi
           echo "Successfully obtained access token again after reactivation!"
-

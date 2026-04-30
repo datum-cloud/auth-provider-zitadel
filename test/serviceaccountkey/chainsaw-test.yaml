@@ -1,11 +1,11 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: machineaccountkey-lifecycle
+  name: serviceaccountkey-lifecycle
 spec:
-  # This test verifies the MachineAccountKey lifecycle (create, list, delete, verify missing).
-  # 1. Create a MachineAccount (Active).
-  # 2. Create two MachineAccountKeys for it.
+  # This test verifies the ServiceAccountKey lifecycle (create, list, delete, verify missing).
+  # 1. Create a ServiceAccount (Active).
+  # 2. Create two ServiceAccountKeys for it.
   # 3. List the keys, verify both are present.
   # 4. Delete one of the keys.
   # 5. List the keys again, verify only the second key remains.
@@ -13,13 +13,13 @@ spec:
   - name: create-resources
     try:
     - apply:
-        file: resources/machineaccount.yaml
+        file: resources/serviceaccount.yaml
     - assert:
         resource:
           apiVersion: iam.miloapis.com/v1alpha1
-          kind: MachineAccount
+          kind: ServiceAccount
           metadata:
-            name: ma-keys
+            name: sa-keys
           status:
             state: Active
             conditions:
@@ -30,9 +30,9 @@ spec:
           set -e
 
           # The Zitadel username is the computed email: {name}@single.identity.miloapis.com
-          MA_UID=$(kubectl get machineaccount ma-keys -o jsonpath='{.metadata.uid}')
-          MA_USERNAME="ma-keys@single.identity.miloapis.com"
-          echo "$MA_USERNAME" > /tmp/ma_username.txt
+          SA_UID=$(kubectl get serviceaccounts.iam.miloapis.com sa-keys -o jsonpath='{.metadata.uid}')
+          SA_USERNAME="sa-keys@single.identity.miloapis.com"
+          echo "$SA_USERNAME" > /tmp/sa_username.txt
 
           # Create Key 1
           openssl genrsa -out /tmp/key1-priv.pem 2048 2>/dev/null
@@ -40,10 +40,10 @@ spec:
           KEY1_PUB_KEY=$(cat /tmp/key1-pub.pem)
 
           POST_RESPONSE_1=$(jq -n \
-            --arg machineAccountUserName "$MA_USERNAME" \
+            --arg serviceAccountUserName "$SA_USERNAME" \
             --arg publicKey "$KEY1_PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key1-ma-keys"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
-            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"ServiceAccountKey",metadata:{name:"key1-sa-keys"},spec:{serviceAccountUserName:$serviceAccountUserName,publicKey:$publicKey}}' | \
+            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/serviceaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
               -H "Impersonate-Group: system:masters" \
@@ -65,10 +65,10 @@ spec:
           KEY2_PUB_KEY=$(cat /tmp/key2-pub.pem)
 
           POST_RESPONSE_2=$(jq -n \
-            --arg machineAccountUserName "$MA_USERNAME" \
+            --arg serviceAccountUserName "$SA_USERNAME" \
             --arg publicKey "$KEY2_PUB_KEY" \
-            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"MachineAccountKey",metadata:{name:"key2-ma-keys"},spec:{machineAccountUserName:$machineAccountUserName,publicKey:$publicKey}}' | \
-            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
+            '{apiVersion:"identity.miloapis.com/v1alpha1",kind:"ServiceAccountKey",metadata:{name:"key2-sa-keys"},spec:{serviceAccountUserName:$serviceAccountUserName,publicKey:$publicKey}}' | \
+            curl -s -X POST "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/serviceaccountkeys" \
               -H "Content-Type: application/json" \
               -H "Impersonate-User: system:admin" \
               -H "Impersonate-Group: system:masters" \
@@ -89,21 +89,21 @@ spec:
     - script:
         content: |
           set -e
-          MA_USERNAME=$(cat /tmp/ma_username.txt)
+          SA_USERNAME=$(cat /tmp/sa_username.txt)
 
-          LIST_RESPONSE=$(curl -s -G "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
-            --data-urlencode "fieldSelector=spec.machineAccountUserName=${MA_USERNAME}" \
+          LIST_RESPONSE=$(curl -s -G "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/serviceaccountkeys" \
+            --data-urlencode "fieldSelector=spec.serviceAccountUserName=${SA_USERNAME}" \
             -H "Impersonate-User: system:admin" \
             -H "Impersonate-Group: system:masters" \
             -H "Impersonate-Extra-project: single")
-          
+
           ITEMS_COUNT=$(printf '%s\n' "$LIST_RESPONSE" | jq '.items | length')
           if [ "$ITEMS_COUNT" -ne 2 ]; then
             echo "ERROR: Expected 2 keys, got $ITEMS_COUNT! Response:"
             printf '%s\n' "$LIST_RESPONSE"
             exit 1
           fi
-          echo "Successfully verified 2 keys are present for $MA_USERNAME."
+          echo "Successfully verified 2 keys are present for $SA_USERNAME."
 
   - name: delete-one-key
     try:
@@ -113,7 +113,7 @@ spec:
           KEY1_ID=$(cat /tmp/key1_id.txt)
 
           # Delete Key 1. Target resource name is the keyID
-          DELETE_RESPONSE=$(curl -s -X DELETE "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys/${KEY1_ID}" \
+          DELETE_RESPONSE=$(curl -s -X DELETE "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/serviceaccountkeys/${KEY1_ID}" \
             -H "Impersonate-User: system:admin" \
             -H "Impersonate-Group: system:masters" \
             -H "Impersonate-Extra-project: single")
@@ -126,15 +126,15 @@ spec:
     - script:
         content: |
           set -e
-          MA_USERNAME=$(cat /tmp/ma_username.txt)
+          SA_USERNAME=$(cat /tmp/sa_username.txt)
           KEY2_ID=$(cat /tmp/key2_id.txt)
 
-          LIST_RESPONSE=$(curl -s -G "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/machineaccountkeys" \
-            --data-urlencode "fieldSelector=spec.machineAccountUserName=${MA_USERNAME}" \
+          LIST_RESPONSE=$(curl -s -G "http://localhost:8001/apis/identity.miloapis.com/v1alpha1/serviceaccountkeys" \
+            --data-urlencode "fieldSelector=spec.serviceAccountUserName=${SA_USERNAME}" \
             -H "Impersonate-User: system:admin" \
             -H "Impersonate-Group: system:masters" \
             -H "Impersonate-Extra-project: single")
-          
+
           ITEMS_COUNT=$(printf '%s\n' "$LIST_RESPONSE" | jq '.items | length')
           if [ "$ITEMS_COUNT" -ne 1 ]; then
             echo "ERROR: Expected 1 key, got $ITEMS_COUNT! Response:"
