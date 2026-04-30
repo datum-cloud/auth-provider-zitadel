@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       test_suite:
-        description: 'Test suite to run (e.g., machineaccount, userdeactivation or empty for all)'
+        description: 'Test suite to run (e.g., serviceaccount, userdeactivation or empty for all)'
         required: false
         default: ''
         type: string

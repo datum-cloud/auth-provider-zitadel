@@ -7,7 +7,7 @@ rules:
 - apiGroups:
   - iam.miloapis.com
   resources:
-  - machineaccounts
+  - serviceaccounts
   verbs:
   - create
   - delete
@@ -19,7 +19,7 @@ rules:
 - apiGroups:
   - iam.miloapis.com
   resources:
-  - machineaccounts/finalizers
+  - serviceaccounts/finalizers
   - userdeactivations/finalizers
   - userdeactivations/status
   - users/finalizers
@@ -28,7 +28,7 @@ rules:
 - apiGroups:
   - iam.miloapis.com
   resources:
-  - machineaccounts/status
+  - serviceaccounts/status
   verbs:
   - get
   - patch

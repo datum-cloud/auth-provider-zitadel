@@ -143,7 +143,7 @@ and manages the auth provider lifecycle.`,
 
 // nolint:gocyclo
 func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConfig) error {
-	setupLog.Info("Machine Account Email address suffix", "emailAddressSuffix", cfg.EmailAddressSuffix)
+	setupLog.Info("Service Account Email address suffix", "emailAddressSuffix", cfg.EmailAddressSuffix)
 
 	// Log leader election configuration
 	if cfg.LeaderElection.Enabled {
@@ -405,7 +405,7 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 	}
 	zitadelHtppClient := zitadelHtppClient.NewClientWithTokenSource(cfg.Zitadel.BaseURL, tokenSource)
 
-	// Build the SDK client for gRPC-based operations (MachineAccount, MachineAccountKey, and Project controllers).
+	// Build the SDK client for gRPC-based operations (ServiceAccount, ServiceAccountKey, and Project controllers).
 	// SDKDomain and SDKIssuer default to the values derived from BaseURL when not set.
 	sdkDomain := cfg.Zitadel.SDKDomain
 	if sdkDomain == "" {
@@ -426,12 +426,12 @@ func runController(cfg *config.ControllerConfig, globalConfig *config.GlobalConf
 		os.Exit(1)
 	}
 
-	// Setup MachineAccountController on multicluster manager (for project control planes)
-	if err = (&controller.MachineAccountController{
+	// Setup ServiceAccountController on multicluster manager (for project control planes)
+	if err = (&controller.ServiceAccountController{
 		Zitadel:            zitadelSDKClient,
 		EmailAddressSuffix: cfg.EmailAddressSuffix,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "MachineAccount")
+		setupLog.Error(err, "unable to create controller", "controller", "ServiceAccount")
 		os.Exit(1)
 	}
 

@@ -25,7 +25,7 @@ import (
 	openapicommon "k8s.io/kube-openapi/pkg/common"
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 
-	registrymachineaccountkeys "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/machineaccountkeys"
+	registryserviceaccountkeys "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/serviceaccountkeys"
 	registrysessions "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/sessions"
 	registryuseridentities "go.miloapis.com/auth-provider-zitadel/internal/apiserver/identity/useridentities"
 	"go.miloapis.com/auth-provider-zitadel/internal/config"
@@ -178,7 +178,7 @@ func NewAPIServerCommand(global *config.GlobalConfig) *cobra.Command {
 			storage := map[string]rest.Storage{
 				"sessions":       &registrysessions.REST{Z: zc, MiloSAR: miloSAR},
 				"useridentities": &registryuseridentities.REST{Z: zc, MiloSAR: miloSAR},
-				"machineaccountkeys": &registrymachineaccountkeys.REST{
+				"serviceaccountkeys": &registryserviceaccountkeys.REST{
 					Z:                           zc,
 					EnableImpersonationFallback: enableImpersonationFallback,
 					IntrospectionProjectID:      zitadelIntrospectionProjectID,

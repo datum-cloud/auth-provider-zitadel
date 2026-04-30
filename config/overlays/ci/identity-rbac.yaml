@@ -26,20 +26,20 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: machineaccountkey-creator
+  name: serviceaccountkey-creator
 rules:
   - apiGroups: ["identity.miloapis.com"]
-    resources: ["machineaccountkeys"]
+    resources: ["serviceaccountkeys"]
     verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: machineaccountkey-creator-binding
+  name: serviceaccountkey-creator-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: machineaccountkey-creator
+  name: serviceaccountkey-creator
 subjects:
   - kind: Group
     name: system:authenticated
