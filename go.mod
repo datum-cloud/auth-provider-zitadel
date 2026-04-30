@@ -1,6 +1,6 @@
 module go.miloapis.com/auth-provider-zitadel
 
-go 1.24.10
+go 1.25.0
 
 require (
 	github.com/go-logr/logr v1.4.3
@@ -13,7 +13,7 @@ require (
 	github.com/zitadel/zitadel-go/v3 v3.28.0
 	go.miloapis.com/milo v0.24.6
 	go.uber.org/zap v1.27.1
-	golang.org/x/oauth2 v0.35.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.19.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
