@@ -65,8 +65,8 @@ spec:
 
           # Verify the Datum credentials file has all required fields.
           CREDS_TYPE=$(jq -r '.type' /tmp/datum-credentials.json)
-          if [ "$CREDS_TYPE" != "datum_machine_account" ]; then
-            echo "ERROR: Expected credentials type 'datum_machine_account', got '$CREDS_TYPE'"
+          if [ "$CREDS_TYPE" != "datum_service_account" ]; then
+            echo "ERROR: Expected credentials type 'datum_service_account', got '$CREDS_TYPE'"
             cat /tmp/datum-credentials.json
             exit 1
           fi
