@@ -31,23 +31,34 @@ func Install(s *runtime.Scheme) {
 		},
 	)
 
-	// Sessions are listed by callers using status.userUID=<uid> for
-	// cross-user lookups (gated by SAR in the REST handler). Without this
-	// registration the apiserver pre-rejects the selector before the handler
-	// ever sees it.
+	// Sessions and UserIdentities are listed by callers using
+	// status.userUID=<uid> for cross-user lookups (gated by SAR in the REST
+	// handler). Without this registration the apiserver pre-rejects the
+	// selector before the handler ever sees it.
+	userScopedSelector := func(label, value string) (string, string, error) {
+		switch label {
+		case "status.userUID", "metadata.name", "metadata.namespace":
+			return label, value, nil
+		default:
+			return "", "", nil
+		}
+	}
+
 	_ = s.AddFieldLabelConversionFunc(
 		schema.GroupVersionKind{
 			Group:   milov1alpha1.SchemeGroupVersion.Group,
 			Version: milov1alpha1.SchemeGroupVersion.Version,
 			Kind:    "Session",
 		},
-		func(label, value string) (string, string, error) {
-			switch label {
-			case "status.userUID", "metadata.name", "metadata.namespace":
-				return label, value, nil
-			default:
-				return "", "", nil
-			}
+		userScopedSelector,
+	)
+
+	_ = s.AddFieldLabelConversionFunc(
+		schema.GroupVersionKind{
+			Group:   milov1alpha1.SchemeGroupVersion.Group,
+			Version: milov1alpha1.SchemeGroupVersion.Version,
+			Kind:    "UserIdentity",
 		},
+		userScopedSelector,
 	)
 }
