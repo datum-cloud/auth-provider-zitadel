@@ -34,7 +34,7 @@ jobs:
     uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
     with:
       registry-organization: milo-os
-      image-name: auth-provider-zitadel
+      image-name: zitadel-provider
       platforms: linux/amd64,linux/arm64
     secrets: inherit
 
