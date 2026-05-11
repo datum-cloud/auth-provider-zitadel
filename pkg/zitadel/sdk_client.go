@@ -145,6 +145,13 @@ func (c *SDKClient) mapZitadelSession(s *sessionv2.Session) Session {
 		t := cd.AsTime()
 		lastUpdated = &t
 	}
+	var metadata map[string]string
+	if md := s.GetMetadata(); len(md) > 0 {
+		metadata = make(map[string]string, len(md))
+		for k, v := range md {
+			metadata[k] = string(v)
+		}
+	}
 	return Session{
 		ID:            s.GetId(),
 		UserID:        s.GetFactors().GetUser().GetId(),
@@ -153,6 +160,7 @@ func (c *SDKClient) mapZitadelSession(s *sessionv2.Session) Session {
 		CreatedAt:     toTime(s.GetCreationDate()),
 		LastUpdated:   lastUpdated,
 		UserAgent:     extractUserAgentString(zeUA),
+		Metadata:      metadata,
 	}
 }
 
