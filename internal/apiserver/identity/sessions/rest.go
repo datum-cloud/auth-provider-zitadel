@@ -49,6 +49,34 @@ var _ rest.SingularNameProvider = &REST{}
 
 var sessionsGR = schema.GroupResource{Group: milov1alpha1.SchemeGroupVersion.Group, Resource: "sessions"}
 
+// metadataAnnotationKeys lists the Zitadel session metadata keys that are
+// exposed on the milo Session via ObjectMeta.Annotations along with the
+// destination annotation key. Add new entries here when a metadata key needs
+// to be visible to platform consumers (e.g. the fraud service).
+var metadataAnnotationKeys = map[string]string{
+	"maxmind/tracking-token": "iam.miloapis.com/maxmind-tracking-token",
+}
+
+// sessionAnnotations builds the ObjectMeta.Annotations for a milo Session
+// from the Zitadel session metadata, filtered through the metadataAnnotationKeys
+// allowlist. Returns nil when no recognised entries are present so we don't
+// stamp empty annotations onto every response.
+func sessionAnnotations(metadata map[string]string) map[string]string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var out map[string]string
+	for src, dst := range metadataAnnotationKeys {
+		if v, ok := metadata[src]; ok && v != "" {
+			if out == nil {
+				out = make(map[string]string, len(metadataAnnotationKeys))
+			}
+			out[dst] = v
+		}
+	}
+	return out
+}
+
 func (r *REST) NamespaceScoped() bool   { return false }
 func (r *REST) New() runtime.Object     { return &milov1alpha1.Session{} }
 func (r *REST) NewList() runtime.Object { return &milov1alpha1.SessionList{} }
@@ -113,6 +141,7 @@ func (r *REST) List(ctx context.Context, options *metainternal.ListOptions) (run
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              s.ID,
 				CreationTimestamp: metav1.NewTime(now),
+				Annotations:       sessionAnnotations(s.Metadata),
 			},
 			Status: milov1alpha1.SessionStatus{
 				UserUID:       uid,
@@ -148,8 +177,11 @@ func (r *REST) Get(ctx context.Context, name string, _ *metav1.GetOptions) (runt
 	}
 	klog.V(3).InfoS("Got session", "name", name, "owner", s.UserID)
 	return &milov1alpha1.Session{
-		TypeMeta:   metav1.TypeMeta{Kind: "Session", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: s.ID},
+		TypeMeta: metav1.TypeMeta{Kind: "Session", APIVersion: milov1alpha1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        s.ID,
+			Annotations: sessionAnnotations(s.Metadata),
+		},
 		Status: milov1alpha1.SessionStatus{
 			UserUID:       s.UserID,
 			Provider:      "zitadel",

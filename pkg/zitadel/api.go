@@ -29,6 +29,12 @@ type Session struct {
 	CreatedAt     time.Time
 	LastUpdated   *time.Time
 	UserAgent     string
+	// Metadata is the arbitrary key/value bag Zitadel exposes on a session.
+	// Today it carries the MaxMind device-tracking token (key
+	// "maxmind/tracking-token"); the apiserver mirrors selected entries onto
+	// the milo Session as annotations so they can be read by downstream
+	// consumers like the fraud service.
+	Metadata map[string]string
 }
 
 // IDPLink represents an identity provider link for a user.
