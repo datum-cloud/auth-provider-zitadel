@@ -33,6 +33,7 @@ jobs:
       packages: write
     uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.13.1
     with:
+      registry-organization: milo-os
       image-name: auth-provider-zitadel
       platforms: linux/amd64,linux/arm64
     secrets: inherit
