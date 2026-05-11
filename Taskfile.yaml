@@ -15,7 +15,7 @@ includes:
 vars:
   WAIT_TIMEOUT: "20m"
   TOOL_DIR: "{{.USER_WORKING_DIR}}/bin"
-  IMAGE_NAME: "ghcr.io/datum-cloud/auth-provider-zitadel"
+  IMAGE_NAME: "ghcr.io/milo-os/zitadel-provider"
   IMAGE_TAG: "dev"
   TEST_INFRA_CLUSTER_NAME: "test-infra"
   TEST_INFRA_REPO_REF: "v0.6.0"
@@ -160,11 +160,11 @@ tasks:
         set -e
         echo "Installing IAM and Infrastructure CRDs..."
         task test-infra:kubectl -- apply \
-          -k https://github.com/datum-cloud/milo/config/crd/bases/iam
+          -k https://github.com/milo-os/milo/config/crd/bases/iam
         task test-infra:kubectl -- apply \
-          -k https://github.com/datum-cloud/milo/config/crd/bases/infrastructure?ref=v0.21.0
+          -k https://github.com/milo-os/milo/config/crd/bases/infrastructure?ref=v0.21.0
         task test-infra:kubectl -- apply \
-          -k https://github.com/datum-cloud/milo/config/crd/bases/resourcemanager?ref=v0.21.0
+          -k https://github.com/milo-os/milo/config/crd/bases/resourcemanager?ref=v0.21.0
         echo "Milo CRDs installed."
 
   ci:port-forward:

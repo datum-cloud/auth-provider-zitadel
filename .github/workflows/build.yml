@@ -45,9 +45,9 @@ jobs:
       packages: write
     uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.13.1
     with:
-      bundle-name: ghcr.io/datum-cloud/auth-provider-zitadel-kustomize
+      bundle-name: ghcr.io/milo-os/zitadel-provider-kustomize
       bundle-path: config
       image-overlays: config/base
-      image-name: ghcr.io/datum-cloud/auth-provider-zitadel
+      image-name: ghcr.io/milo-os/zitadel-provider
       debug: true
     secrets: inherit

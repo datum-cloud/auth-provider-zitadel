@@ -12,7 +12,7 @@ resources:
 # Override the image tag to use the locally-built dev image.
 # This affects all three services since they share the same image name.
 images:
-  - name: ghcr.io/datum-cloud/auth-provider-zitadel
+  - name: ghcr.io/milo-os/zitadel-provider
     newTag: dev
 
 patches:
