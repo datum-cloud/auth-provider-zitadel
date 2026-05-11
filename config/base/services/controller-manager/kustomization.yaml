@@ -4,6 +4,6 @@ resources:
 - manager.yaml
 - metrics-service.yaml
 images:
-- name: ghcr.io/datum-cloud/auth-provider-zitadel
-  newName: ghcr.io/datum-cloud/auth-provider-zitadel
+- name: ghcr.io/milo-os/zitadel-provider
+  newName: ghcr.io/milo-os/zitadel-provider
   newTag: latest

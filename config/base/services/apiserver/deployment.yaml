@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: apiserver
-          image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
+          image: ghcr.io/milo-os/zitadel-provider:latest
           args:
             - apiserver
             - --secure-port=8443

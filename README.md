@@ -8,7 +8,7 @@ machine accounts.
 ## Overview
 
 This project provides the authentication foundation for the [Milo business
-operating system](https://github.com/datum-cloud/milo), which uses Kubernetes
+operating system](https://github.com/milo-os/milo), which uses Kubernetes
 APIServer patterns to manage business entities for product-led B2B companies.
 The auth provider integrates Milo's business APIs with Zitadel's identity and
 access management platform to handle complex authentication scenarios like:

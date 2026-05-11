@@ -18,7 +18,7 @@ env:
   TASK_X_REMOTE_TASKFILES: 1
   # Test infrastructure configuration
   TEST_INFRA_CLUSTER_NAME: test-infra
-  IMAGE_NAME: ghcr.io/datum-cloud/auth-provider-zitadel
+  IMAGE_NAME: ghcr.io/milo-os/zitadel-provider
   IMAGE_TAG: dev
 
 jobs:

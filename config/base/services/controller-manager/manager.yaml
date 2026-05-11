@@ -86,7 +86,7 @@ spec:
           - --server-config=$(ZITADEL_CONTROLLER_MANAGER_CONFIG_PATH)
           # Configure which kubeconfig to use for the core control plane.
           - --core-control-plane-kubeconfig=$(CORE_CONTROL_PLANE_KUBECONFIG_PATH)
-        image: ghcr.io/datum-cloud/auth-provider-zitadel:latest
+        image: ghcr.io/milo-os/zitadel-provider:latest
         name: controller-manager
         env:
         # Leader election environment variables

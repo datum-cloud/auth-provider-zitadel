@@ -158,7 +158,7 @@ spec:
     # Runs co-located with Zitadel so TLS is not needed for the loopback address.
     extraContainers:
       - name: zitadel-actions-server
-        image: ghcr.io/datum-cloud/auth-provider-zitadel:dev
+        image: ghcr.io/milo-os/zitadel-provider:dev
         imagePullPolicy: Never
         args:
           - actions-server
